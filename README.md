@@ -40,6 +40,32 @@ Open an agent in this folder and say
 
 It runs the pipeline and reports the new CFP count per source. The full procedure is in [`INSTRUCTIONS.md`](INSTRUCTIONS.md).
 
+## Browse the CFPs in Obsidian (cfps.base)
+
+The vault's `0-dashboard/bases/cfps.base` turns the refreshed notes into tables. Open that file in Obsidian; a navigation view with one table per way of looking at the CFPs appears.
+
+Every view shows the same columns, sorted by CFP deadline (soonest first): Event (links into the note), Shortlist, Country, Event date, Location, Topics, CFP close, CFP link, Event link, Submissions, Benefits, Source.
+
+The views in the sidebar:
+
+| View | What it shows |
+|---|---|
+| **All CFPs** | Every live note. The default. |
+| **Upcoming (> today)** | Only still-open CFPs (`cfp_close` today or later) — your working list. |
+| **Upcoming (> -30 days)** | Open CFPs plus ones that closed within the last 30 days. |
+| **Closed (90d)** | CFPs that closed 30–90 days ago, for recap. |
+| **Short listed** | Notes you flagged `shortlist: true`. |
+| **Submitted** | Notes with at least one wiki link under `submissions`. |
+| **Conf in USA / Conf outside USA / Online** | Geography filters. |
+| **Local events** | The Bay Area — matches San Francisco, San Jose, Oakland, Palo Alto, Menlo Park, Mountain View, Cupertino, Santa Clara, Sunnyvale, Berkeley, Redwood, San Mateo, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, Milpitas, Bay Area in `location`. |
+| **By source** | Same list, grouped by which feed the note came from. |
+| **By country** | Same list, grouped by country. |
+| **Archived** | The notes `archived/` holds (moved by refreshes once no source carries them; newest first). Every other view excludes them. |
+
+Navigating: open a view from the sidebar, click an Event link to open the note, sort or filter by any column, and mark intent in the note — set `shortlist: true` or add wiki links to `submissions` in the frontmatter — the next refresh keeps those fields, and the note shows up here differently straight away.
+
+The base filters on `type: cfp`, so only pipeline notes appear. Questions of "where do I submit / what's the deadline" live in the `## Notes` body in the note itself. Tune the tables by editing the YAML in `cfps.base`.
+
 ## Options
 
 `--help` on any script lists all flags.
