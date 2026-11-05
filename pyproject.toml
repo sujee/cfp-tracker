@@ -1,0 +1,17 @@
+[project]
+name = "cfps"
+version = "0.0.0"
+description = "Conference CFP watchlist: public CFP feeds merged into one note per conference."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Optional: country-flag emoji in the legacy single-file report.
+flags = ["pycountry"]
+
+[tool.uv]
+# No build backend — this is a scripts folder, not an installable package.
+package = false

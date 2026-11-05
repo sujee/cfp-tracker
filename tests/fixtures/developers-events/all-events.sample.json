@@ -1,0 +1,319 @@
+[
+  {
+    "name": "Dutch AI Conference",
+    "date": [
+      1773187200000,
+      1773273600000
+    ],
+    "hyperlink": "https://aiconference.nl",
+    "location": "Amsterdam (Netherlands)",
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "misc": "<a href=\"https://aiconference.nl/speakers/cfp\"><img alt=\"CFP Dutch AI Conference\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2019-December-2025&color=red\"></a>",
+    "cfp": {
+      "link": "https://aiconference.nl/speakers/cfp",
+      "until": "19-December-2025",
+      "untilDate": 1766102400000
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "tech",
+        "value": "artificial-intelligence"
+      },
+      {
+        "key": "topic",
+        "value": "ai"
+      }
+    ]
+  },
+  {
+    "name": "STARWEST",
+    "date": [
+      1789862400000,
+      1790294400000
+    ],
+    "hyperlink": "https://starwest.techwell.com",
+    "location": "Anaheim, CA (USA)",
+    "city": "Anaheim, CA",
+    "country": "USA",
+    "misc": "",
+    "cfp": {},
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "tech",
+        "value": "software-testing"
+      },
+      {
+        "key": "topic",
+        "value": "agile"
+      },
+      {
+        "key": "language",
+        "value": "english"
+      }
+    ]
+  },
+  {
+    "name": "DevFest 2026",
+    "date": [
+      1792195200000
+    ],
+    "hyperlink": "https://gdg.community.dev/events/details/google-gdg-north-lebanon-presents-devfest-2026-innovation-in-action/",
+    "location": "Tripoli (Lebanon)",
+    "city": "Tripoli",
+    "country": "Lebanon",
+    "misc": "",
+    "cfp": {},
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": []
+  },
+  {
+    "name": "DevFest 2026",
+    "date": [
+      1794614400000
+    ],
+    "hyperlink": "https://gdg.community.dev/events/details/google-gdg-ismailia-presents-devfest-2026-ignite-your-tech-journey/",
+    "location": "Ismailia 3 (Egypt)",
+    "city": "Ismailia 3",
+    "country": "Egypt",
+    "misc": "",
+    "cfp": {},
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      }
+    ]
+  },
+  {
+    "name": "DevFest 2026",
+    "date": [
+      1795219200000
+    ],
+    "hyperlink": "https://gdg.community.dev/events/details/google-gdg-setif-presents-devfest-2026/",
+    "location": "Setif (Algeria)",
+    "city": "Setif",
+    "country": "Algeria",
+    "misc": "",
+    "cfp": {},
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      }
+    ]
+  },
+  {
+    "name": "DevFest 2026",
+    "date": [
+      1795737600000,
+      1795824000000
+    ],
+    "hyperlink": "https://gdg.community.dev/events/details/google-gdg-faro-presents-devfest-2026-build-secure-amp-scale-in-the-agentic-era/",
+    "location": "Faro (Portugal)",
+    "city": "Faro",
+    "country": "Portugal",
+    "misc": "<a href=\"https://app.advocu.com/events/6ab2aac807b94a03b9fe1db5\"><img alt=\"CFP DevFest 2026\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2006-November-2026&color=green\"></a>",
+    "cfp": {
+      "link": "https://app.advocu.com/events/6ab2aac807b94a03b9fe1db5",
+      "until": "06-November-2026",
+      "untilDate": 1793923200000
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      }
+    ]
+  },
+  {
+    "name": "ContainerDays & AI Context London 2027",
+    "date": [
+      1802217600000,
+      1802304000000
+    ],
+    "hyperlink": "https://pretix.eu/docklandmedia/cdsaicontextlondon27/",
+    "location": "London (UK)",
+    "city": "London",
+    "country": "UK",
+    "misc": "<a href=\"https://sessionize.com/london-containerdays-and-ai-context-2027\"><img alt=\"CFP ContainerDays & AI Context London 2027\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2001-December-2026&color=green\"></a>",
+    "cfp": {
+      "link": "https://sessionize.com/london-containerdays-and-ai-context-2027",
+      "until": "01-December-2026",
+      "untilDate": 1796083200000,
+      "durations": [
+        "talk:15",
+        "talk:30",
+        "workshop:60"
+      ]
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      },
+      {
+        "key": "tech",
+        "value": "containers"
+      },
+      {
+        "key": "topic",
+        "value": "ai"
+      },
+      {
+        "key": "topic",
+        "value": "cloud"
+      }
+    ]
+  },
+  {
+    "name": "AI Context New York 2027",
+    "date": [
+      1805155200000,
+      1805241600000
+    ],
+    "hyperlink": "https://www.aicontextseries.com/new-york",
+    "location": "New York, NY (USA)",
+    "city": "New York, NY",
+    "country": "USA",
+    "misc": "<a href=\"https://sessionize.com/ai-context-ny-co/\"><img alt=\"CFP AI Context New York 2027\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2004-January-2027&color=green\"></a>",
+    "cfp": {
+      "link": "https://sessionize.com/ai-context-ny-co/",
+      "until": "04-January-2027",
+      "untilDate": 1799020800000,
+      "durations": [
+        "talk:5",
+        "talk:20",
+        "talk:25"
+      ]
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      },
+      {
+        "key": "tech",
+        "value": "ai"
+      },
+      {
+        "key": "topic",
+        "value": "machine-learning"
+      }
+    ]
+  },
+  {
+    "name": "Dutch AI Conference",
+    "date": [
+      1805155200000,
+      1805414400000
+    ],
+    "hyperlink": "https://aiconference.nl",
+    "location": "Amsterdam (Netherlands)",
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "misc": "<a href=\"https://sessionize.com/dawn-conferences-2027/\"><img alt=\"CFP Dutch AI Conference\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2018-December-2026&color=green\"></a>",
+    "cfp": {
+      "link": "https://sessionize.com/dawn-conferences-2027/",
+      "until": "18-December-2026",
+      "untilDate": 1797552000000,
+      "durations": [
+        "talk:30",
+        "talk:35",
+        "talk:45",
+        "workshop:210"
+      ]
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "language",
+        "value": "english"
+      },
+      {
+        "key": "tech",
+        "value": "ai"
+      },
+      {
+        "key": "topic",
+        "value": "data"
+      },
+      {
+        "key": "topic",
+        "value": "ml"
+      }
+    ]
+  },
+  {
+    "name": "AI & Copilot Summit 01.-02. Juni 2027",
+    "date": [
+      1811808000000,
+      1811894400000
+    ],
+    "hyperlink": "https://events.m365-summits.de/AICopilotSummit0102Juni2027",
+    "location": "Online",
+    "city": "Online",
+    "country": "Online",
+    "misc": "<a href=\"https://sessionize.com/ai-copilot-summit-01-02-juni-2027\"><img alt=\"CFP AI & Copilot Summit 01.-02. Juni 2027\" src=\"https://img.shields.io/static/v1?label=CFP&message=until%2021-December-2026&color=green\"></a>",
+    "cfp": {
+      "link": "https://sessionize.com/ai-copilot-summit-01-02-juni-2027",
+      "until": "21-December-2026",
+      "untilDate": 1797811200000,
+      "durations": [
+        "talk:30"
+      ]
+    },
+    "closedCaptions": false,
+    "scholarship": false,
+    "sponsoringBadge": false,
+    "status": "open",
+    "tags": [
+      {
+        "key": "tech",
+        "value": "ai"
+      },
+      {
+        "key": "topic",
+        "value": "copilot"
+      },
+      {
+        "key": "language",
+        "value": "english"
+      }
+    ]
+  }
+]

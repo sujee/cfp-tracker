@@ -1,0 +1,144 @@
+[
+  {
+    "link": "https://hashiconfeu.hashicorp.com/#submit-a-talk",
+    "until": "March-15-2019",
+    "untilDate": 1552608000000,
+    "conf": {
+      "name": "HashiConf EU",
+      "date": [
+        1562544000000,
+        1562716800000
+      ],
+      "hyperlink": "https://hashiconfeu.hashicorp.com/",
+      "status": "open",
+      "location": "Amsterdam (Netherlands)"
+    }
+  },
+  {
+    "link": "https://aiconference.nl/speakers/cfp",
+    "until": "19-December-2025",
+    "untilDate": 1766102400000,
+    "conf": {
+      "name": "Dutch AI Conference",
+      "date": [
+        1773187200000,
+        1773273600000
+      ],
+      "hyperlink": "https://aiconference.nl",
+      "status": "open",
+      "location": "Amsterdam (Netherlands)"
+    }
+  },
+  {
+    "link": "https://app.advocu.com/events/6ab2aac807b94a03b9fe1db5",
+    "until": "06-November-2026",
+    "untilDate": 1793923200000,
+    "conf": {
+      "name": "DevFest 2026",
+      "date": [
+        1795737600000,
+        1795824000000
+      ],
+      "hyperlink": "https://gdg.community.dev/events/details/google-gdg-faro-presents-devfest-2026-build-secure-amp-scale-in-the-agentic-era/",
+      "status": "open",
+      "location": "Faro (Portugal)"
+    }
+  },
+  {
+    "link": "https://sessionize.com/london-containerdays-and-ai-context-2027",
+    "until": "01-December-2026",
+    "untilDate": 1796083200000,
+    "durations": [
+      "talk:15",
+      "talk:30",
+      "workshop:60"
+    ],
+    "conf": {
+      "name": "ContainerDays & AI Context London 2027",
+      "date": [
+        1802217600000,
+        1802304000000
+      ],
+      "hyperlink": "https://pretix.eu/docklandmedia/cdsaicontextlondon27/",
+      "status": "open",
+      "location": "London (UK)"
+    }
+  },
+  {
+    "link": "https://sessionize.com/dawn-conferences-2027/",
+    "until": "18-December-2026",
+    "untilDate": 1797552000000,
+    "durations": [
+      "talk:30",
+      "talk:35",
+      "talk:45",
+      "workshop:210"
+    ],
+    "conf": {
+      "name": "Dutch AI Conference",
+      "date": [
+        1805155200000,
+        1805414400000
+      ],
+      "hyperlink": "https://aiconference.nl",
+      "status": "open",
+      "location": "Amsterdam (Netherlands)"
+    }
+  },
+  {
+    "link": "https://sessionize.com/ai-copilot-summit-01-02-juni-2027",
+    "until": "21-December-2026",
+    "untilDate": 1797811200000,
+    "durations": [
+      "talk:30"
+    ],
+    "conf": {
+      "name": "AI & Copilot Summit 01.-02. Juni 2027",
+      "date": [
+        1811808000000,
+        1811894400000
+      ],
+      "hyperlink": "https://events.m365-summits.de/AICopilotSummit0102Juni2027",
+      "status": "open",
+      "location": "Online"
+    }
+  },
+  {
+    "link": "https://sessionize.com/ai-context-ny-co/",
+    "until": "04-January-2027",
+    "untilDate": 1799020800000,
+    "durations": [
+      "talk:5",
+      "talk:20",
+      "talk:25"
+    ],
+    "conf": {
+      "name": "AI Context New York 2027",
+      "date": [
+        1805155200000,
+        1805241600000
+      ],
+      "hyperlink": "https://www.aicontextseries.com/new-york",
+      "status": "open",
+      "location": "New York, NY (USA)"
+    }
+  },
+  {
+    "link": "https://mobilemakers.fr/cfp",
+    "until": "18-January-2027",
+    "untilDate": 1800230400000,
+    "durations": [
+      "talk:20",
+      "talk:40"
+    ],
+    "conf": {
+      "name": "Mobile Makers 2027",
+      "date": [
+        1809043200000
+      ],
+      "hyperlink": "https://mobilemakers.fr/",
+      "status": "open",
+      "location": "Paris (France)"
+    }
+  }
+]

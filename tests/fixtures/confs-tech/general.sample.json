@@ -1,0 +1,68 @@
+[
+  {
+    "name": "AI in Production",
+    "url": "https://ai-in-production.jumpingrivers.com",
+    "startDate": "2027-06-10",
+    "endDate": "2027-06-11",
+    "city": "Newcastle-Upon-Tyne",
+    "country": "U.K.",
+    "online": false,
+    "locales": "EN",
+    "cfpUrl": "https://ai-in-production.jumpingrivers.com/#abstracts",
+    "cfpEndDate": "2027-01-29",
+    "bluesky": "jumpingrivers.com",
+    "mastodon": "@jumpingrivers@fosstodon.org"
+  },
+  {
+    "name": "Webdevcon",
+    "url": "https://webdevcon.nl",
+    "startDate": "2027-03-16",
+    "endDate": "2027-03-19",
+    "city": "Amsterdam",
+    "country": "Netherlands",
+    "online": false,
+    "locales": "EN",
+    "cocUrl": "https://webdevcon.nl/code-of-conduct/",
+    "cfpUrl": "https://sessionize.com/dawn-conferences-2027",
+    "cfpEndDate": "2026-12-18",
+    "mastodon": "@webdevcon@mastodon.social",
+    "twitter": "@WebdevconNL"
+  },
+  {
+    "name": "PyCascades",
+    "url": "https://2027.pycascades.com",
+    "startDate": "2027-03-20",
+    "endDate": "2027-03-21",
+    "city": "Seattle, WA",
+    "country": "U.S.A.",
+    "online": true,
+    "locales": "EN",
+    "cocUrl": "https://2027.pycascades.com/about/code-of-conduct/",
+    "cfpUrl": "https://pretalx.com/pycascades-2027/cfp",
+    "cfpEndDate": "2026-10-26",
+    "mastodon": "@pycascades@hachyderm.io"
+  },
+  {
+    "name": "Digital Crafts Day",
+    "url": "https://dc-nordoberpfalz.de/DigitalCraftsDay/2026",
+    "startDate": "2026-03-13",
+    "endDate": "2026-03-13",
+    "city": "Weiden",
+    "country": "Germany",
+    "online": false,
+    "locales": "DE",
+    "cocUrl": "https://dc-nordoberpfalz.de/CodeOfConduct",
+    "cfpUrl": "https://sessionize.com/digital-crafts-day-2026",
+    "cfpEndDate": "2025-10-31"
+  },
+  {
+    "name": "Fosdem",
+    "url": "https://fosdem.org/2026",
+    "startDate": "2026-01-31",
+    "endDate": "2026-02-02",
+    "city": "Brussels",
+    "country": "Belgium",
+    "online": false,
+    "locales": "EN"
+  }
+]

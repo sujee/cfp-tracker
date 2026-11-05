@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python environments and bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Symlinks to the Obsidian vault — notes live there, not in this repo
+data
+archived
+
+# Runtime data and scratch files
+cache/
+backups/
+tmp/

@@ -1,0 +1,10 @@
+# cfps pipeline dependencies  (30-speaking-talks/cfps)
+#
+#   pip install -r requirements.txt
+#
+# Required: PyYAML — the per-CFP frontmatter is parsed as real YAML
+# (block/flow lists, quoting, nested maps) instead of by hand.
+PyYAML>=6.0
+
+# Optional: adds the country-flag emoji in the legacy single-file report.
+# pycountry
