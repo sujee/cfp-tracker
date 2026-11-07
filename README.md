@@ -34,13 +34,17 @@ Each run prints a line per source plus a summary, e.g. `developers.events: found
 
 ## Using an agent
 
-Open an agent in this folder and say `update cfps`. It runs the pipeline and reports the new CFP count per source. The full procedure is in [`INSTRUCTIONS.md`](INSTRUCTIONS.md).
+Open an agent in this folder and say 
+
+```text
+update cfps
+```
+
+It runs the pipeline and reports the new CFP count per source. The full procedure is in [`INSTRUCTIONS.md`](INSTRUCTIONS.md).
 
 ## Browse the CFPs in Obsidian (cfps.base)
 
-Copy [cfps.base](cfps.base) anywhere in your Obsidian vault and open it. Obsidian shows one table per way of looking at the CFPs, listed in the view switcher.
-
-The views share one set of columns, sorted by CFP deadline (soonest first, except Archived): Event (links into the note), Shortlist, Country, Event date, Location, Topics, CFP close, CFP link, Event link, Submissions, Benefits, Source.
+Copy [cfps.base](cfps.base) anywhere in your Obsidian vault and open it. Use pre-defined views to browse CFPs.
 
 > **Vault path:** the views exclude archived notes by the path `cfps/archived/`. If your vault keeps the notes elsewhere, find-and-replace that path in `cfps.base`, or the live views will show archived notes and **Archived** will be empty.
 
@@ -56,17 +60,12 @@ The views:
 | **Submitted** | Notes with at least one wiki link under `submissions`. |
 | **Conf in USA / Conf outside USA / Online** | Geography filters. |
 | **Local events** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
-| **By source** | Same list, grouped by which feed the note came from. |
-| **By country** | Same list, grouped by country. |
 | **Archived** | The notes in `archived/` (moved there by a refresh once no source carries them), latest deadline first. Every other view excludes them. |
 
-**Using it:** pick a view, click an Event link to open the note, and sort or filter by any column. To track intent, set `shortlist: true` or add wiki links under `submissions` in the note's frontmatter. The views pick that up immediately, and refreshes preserve both fields.
-
-The base filters on `type: cfp`, so only pipeline notes appear. Your own details (where to submit, deadline quirks) go in the note's `## Notes` body. To tune the tables, edit the YAML in `cfps.base`.
 
 ## Dashboard counts (cfps-dashboard.md)
 
-[cfps-dashboard.md](cfps-dashboard.md) counts the live CFPs in three small dataview tables: events by country, by topic, and by month. Copy it into your vault and open it. It reads the same notes as the base, so archived CFPs are excluded and the counts update after each refresh. (Same caveat as the base: if your vault keeps the notes elsewhere, find-and-replace `30-speaking-talks/cfps/data` in the dataview blocks.)
+[cfps-dashboard.md](cfps-dashboard.md) counts the live CFPs in three small dataview tables: events by country, by topic, and by month. Copy it into your vault and open it. It reads the same notes as the base, so archived CFPs are excluded and the counts update after each refresh. (Same caveat as the base: if your vault keeps the notes elsewhere, find-and-replace `cfps/data` in the dataview blocks.)
 
 Events with several topics count once in each topic. Months come from the note's `event_date`.
 
