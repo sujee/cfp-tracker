@@ -657,6 +657,135 @@ class TestCountryNormalization(WriterTestCase):
         self.assertEqual(self.frontmatter()["country"], "USA")
 
 
+class TestStripUtm(unittest.TestCase):
+    """``strip_utm`` drops per-share Google Analytics tags without touching the rest."""
+
+    def test_removes_a_full_set_of_utm_params(self) -> None:
+        url = (
+            "https://sessionize.com/swampup?utm_source=a&utm_medium=b"
+            "&utm_campaign=c&utm_id=d&utm_term=e&utm_content=f"
+        )
+        self.assertEqual(cw.strip_utm(url), "https://sessionize.com/swampup")
+
+    def test_keeps_non_utm_params_in_order(self) -> None:
+        url = "https://x.com/cfp?utm_source=a&ref=nyc&utm_medium=b&page=2"
+        self.assertEqual(cw.strip_utm(url), "https://x.com/cfp?ref=nyc&page=2")
+
+    def test_only_utm_params_drops_the_question_mark(self) -> None:
+        self.assertEqual(cw.strip_utm("https://x.com/cfp?utm_source=a"), "https://x.com/cfp")
+
+    def test_url_without_a_query_is_unchanged(self) -> None:
+        for url in ("https://x.com/cfp", "https://x.com/cfp#apply", ""):
+            with self.subTest(url=url):
+                self.assertEqual(cw.strip_utm(url), url)
+        self.assertEqual(cw.strip_utm(None), "")
+
+    def test_fragment_is_preserved(self) -> None:
+        self.assertEqual(
+            cw.strip_utm("https://x.com/cfp?utm_source=a&ref=b#form"),
+            "https://x.com/cfp?ref=b#form",
+        )
+
+    def test_param_name_is_case_insensitive(self) -> None:
+        self.assertEqual(cw.strip_utm("https://x.com/cfp?UTM_SOURCE=a"), "https://x.com/cfp")
+        self.assertEqual(cw.strip_utm("https://x.com/cfp?Utm_Campaign=b"), "https://x.com/cfp")
+
+    def test_only_params_starting_with_utm_are_dropped(self) -> None:
+        url = "https://x.com/cfp?myutm_source=a&utmx=1&ref=utm_source"
+        self.assertEqual(cw.strip_utm(url), url)  # key must start with utm_, value is irrelevant
+
+    def test_no_re_encoding_of_kept_params(self) -> None:
+        # A raw-string edit: percent-encoding and '+' in values survive verbatim.
+        url = "https://x.com/cfp?utm_source=a&q=a%20b%2Cc&r=a+b"
+        self.assertEqual(cw.strip_utm(url), "https://x.com/cfp?q=a%20b%2Cc&r=a+b")
+
+
+class TestCfpUrlUtmStripping(WriterTestCase):
+    """The writer strips UTM tags from ``cfp_url`` before comparing and writing."""
+
+    def test_written_url_has_no_utm(self) -> None:
+        row = sample_row(cfp_url="https://sessionize.com/x?utm_source=a&utm_medium=b")
+        self.assertEqual(cw.upsert(self.data, row), "new")
+        self.assertEqual(self.frontmatter()["cfp_url"], "https://sessionize.com/x")
+
+    def test_existing_note_with_utm_is_cleaned_on_refresh(self) -> None:
+        self.write_initial()
+        self.edit(
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/",
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/?utm_source=news",
+        )
+
+        status = cw.upsert(self.data, self.row)
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(
+            self.frontmatter()["cfp_url"],
+            "https://sessionize.com/power-platform-days-barcelona-2026/",
+        )
+
+    def test_utm_does_not_defeat_cross_source_url_match(self) -> None:
+        # developers.events carries the CFP with a UTM tag, confs.tech without:
+        # they must still match on the URL, so the lower-priority source skips.
+        dev = sample_row(
+            name="SCaLE",
+            source="developers.events",
+            cfp_url="https://www.socallinuxexpo.org/scale/24x/cfp?utm_source=dev-events",
+        )
+        confs = sample_row(
+            name="Southern California Linux Expo - SCaLE 24x",
+            source="confs.tech",
+            cfp_url="https://www.socallinuxexpo.org/scale/24x/cfp",
+        )
+        self.assertEqual(cw.upsert(self.data, dev), "new")
+        self.assertEqual(cw.upsert(self.data, confs), "skipped")
+
+    def test_normalize_strips_utm_from_an_existing_note(self) -> None:
+        self.write_initial()
+        self.edit(
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/",
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/?utm_campaign=x",
+        )
+        self.assertTrue(cw.normalize_file(self.path))
+        self.assertEqual(
+            self.frontmatter()["cfp_url"],
+            "https://sessionize.com/power-platform-days-barcelona-2026/",
+        )
+
+
+class TestEventUrlUtmStripping(WriterTestCase):
+    """The writer strips UTM tags from ``event_url`` too."""
+
+    def test_written_event_url_has_no_utm(self) -> None:
+        row = sample_row(event_url="https://powerplatform.com/?utm_source=dev-events&utm_medium=link")
+        self.assertEqual(cw.upsert(self.data, row), "new")
+        self.assertEqual(self.frontmatter()["event_url"], "https://powerplatform.com/")
+
+    def test_utm_in_event_url_is_a_no_op_on_rerun(self) -> None:
+        # The row's tags are stripped before compare, so a tag never forces a rewrite.
+        row = sample_row(event_url="https://powerplatform.com/?utm_source=a")
+        self.assertEqual(cw.upsert(self.data, row), "new")
+        self.assertEqual(cw.upsert(self.data, row), "unchanged")
+
+    def test_existing_note_with_utm_is_cleaned_on_refresh(self) -> None:
+        self.write_initial()
+        self.edit(
+            "event_url: https://powerplatform.com",
+            "event_url: https://powerplatform.com?utm_campaign=spring",
+        )
+
+        self.assertEqual(cw.upsert(self.data, self.row), "updated")
+        self.assertEqual(self.frontmatter()["event_url"], "https://powerplatform.com")
+
+    def test_normalize_strips_utm_from_an_existing_note(self) -> None:
+        self.write_initial()
+        self.edit(
+            "event_url: https://powerplatform.com",
+            "event_url: https://powerplatform.com?utm_campaign=spring",
+        )
+        self.assertTrue(cw.normalize_file(self.path))
+        self.assertEqual(self.frontmatter()["event_url"], "https://powerplatform.com")
+
+
 class TestSubmissionsList(WriterTestCase):
     """``submissions`` replaced the scalar ``submission`` and is a list."""
 

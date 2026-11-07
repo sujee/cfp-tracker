@@ -89,9 +89,37 @@ def reset_cfp_url_index() -> None:
     _CFP_URL_INDEX.clear()
 
 
+# Tracking parameters to drop from a submission URL. Google Analytics UTM tags
+# are per-share noise: two feeds (or two runs) can carry the same CFP page with
+# different tags, so they must not defeat URL matching or leak into a note.
+_UTM_PARAM_RE = re.compile(r"^utm_", re.IGNORECASE)
+
+
+def strip_utm(url) -> str:
+    """Remove ``utm_*`` query parameters from *url*, keeping everything else.
+
+    Works on the raw string without re-encoding it, so the remaining query
+    parameters keep their order and encoding, and any ``#fragment`` survives.
+    A URL with no query, or none of whose parameters start with ``utm_``, is
+    returned unchanged (only surrounding whitespace is trimmed).
+    """
+    s = _as_str(url).strip()
+    if not s or "?" not in s:
+        return s
+    main, has_frag, frag = s.partition("#")
+    base, _, query = main.partition("?")
+    kept = [
+        part
+        for part in query.split("&")
+        if part and not _UTM_PARAM_RE.match(part.split("=", 1)[0])
+    ]
+    out = base + ("?" + "&".join(kept) if kept else "")
+    return f"{out}#{frag}" if has_frag else out
+
+
 def _url_key(url) -> str:
     """Normalise a CFP URL for cross-source matching (``""`` when absent)."""
-    return _as_str(url).strip().rstrip("/").lower()
+    return strip_utm(url).strip().rstrip("/").lower()
 
 
 def _name_tokens(name) -> set:
@@ -515,7 +543,15 @@ def upsert(data_dir: Path, row: dict) -> str:
     """
     # Canonicalise the country label before anything compares or writes it, so
     # "United Kingdom" and "UK" from different feeds land on the same value.
-    row = {**row, "country": normalize_country(row.get("country"))}
+    # Drop UTM tracking tags from the submission and event URLs for the same
+    # reason: they are per-share noise that would otherwise force rewrites and
+    # defeat matching.
+    row = {
+        **row,
+        "country": normalize_country(row.get("country")),
+        "cfp_url": strip_utm(row.get("cfp_url")),
+        "event_url": strip_utm(row.get("event_url")),
+    }
     path = note_path(data_dir, row)
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -619,6 +655,8 @@ def normalize_file(path: Path) -> bool:
     row["benefits"] = _as_list(fm.get("benefits"))
     row["languages"] = _as_list(fm.get("languages"))
     row["country"] = normalize_country(row.get("country"))
+    row["cfp_url"] = strip_utm(row.get("cfp_url"))
+    row["event_url"] = strip_utm(row.get("event_url"))
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
     submissions = _read_submissions(fm)
     notes = _extract_body_notes(body)

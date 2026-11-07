@@ -221,6 +221,12 @@ currently change nothing the base reads. Kept for reference / if the report retu
   A value not in the table (`Germany`, `Peru`, …) is passed through stripped but unchanged — the
   normaliser never invents a country. Add spellings to `_ALIAS_GROUPS` and cover them in
   `tests/test_country.py`.
+- **URLs are de-UTM'd on write.** `cfp_writer.upsert` runs `cfp_url` and `event_url` through
+  `strip_utm`, which removes `utm_*` query parameters (case-insensitive) before comparing or
+  writing — the upstream feeds tack per-share tracking tags onto the same page, and those must
+  not force rewrites, leak into a note, or defeat the cross-source `cfp_url` match (`_url_key`
+  strips them too). The edit is a raw-string one: other query params, their order, encoding and
+  any `#fragment` survive verbatim. `normalize-data.py` cleans existing notes the same way.
 - **CFP platforms die; verify links before calling a list actionable.** Whole platforms shut
   down and leave dead URLs in the source (papercall.io hosted many CFPs and is now offline).
   Sweep with `python3 src/check-links.py tmp/cfps.md` — it reports non-200s and can be narrowed
