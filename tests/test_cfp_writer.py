@@ -137,7 +137,7 @@ class TestUserContentPreserved(WriterTestCase):
         extras = (
             "source: developers.events\n"
             "priority: high\n"
-            "my_tags:\n"
+            "tags:\n"
             "  - speaking\n"
             "  - ai\n"
             "contact:\n"
@@ -152,7 +152,7 @@ class TestUserContentPreserved(WriterTestCase):
         text = self.path.read_text(encoding="utf-8")
         self.assertIn("location: Barcelona, Spain", text)
         self.assertIn("priority: high", text)
-        self.assertIn("my_tags:\n  - speaking\n  - ai", text)
+        self.assertIn("tags:\n  - speaking\n  - ai", text)
         self.assertIn("contact:\n  name: Sujee\n  slack: '@sujee'", text)
 
     def test_shortlist_submissions_and_notes_survive_update(self) -> None:
@@ -183,6 +183,75 @@ class TestUserContentPreserved(WriterTestCase):
         self.assertIn(b"priority: high", after_first)
         cw.normalize_file(self.path)
         self.assertEqual(self.path.read_bytes(), after_first)
+
+
+class TestUserTags(WriterTestCase):
+    """A hand-added ``tags`` property is user metadata: it must survive a refresh.
+
+    ``topics`` is source-owned and gets regenerated (see ``TestNewAndUnchanged``),
+    so ``tags`` is the key to reach for when you want personal tags that stick.
+    It is not in :data:`cfp_writer.KNOWN_FM_KEYS`, so it is preserved verbatim.
+    """
+
+    def test_tags_is_not_a_writer_owned_key(self) -> None:
+        self.assertNotIn("tags", cw.KNOWN_FM_KEYS)
+        self.assertNotIn("tags", cw.SOURCE_SCALAR_FIELDS)
+        self.assertNotIn("tags", cw.LIST_FIELDS)
+
+    def test_added_tags_do_not_trigger_a_rewrite(self) -> None:
+        self.write_initial()
+        self.edit("submissions: []", "submissions: []\ntags: [ai, agents]")
+        edited = self.path.read_bytes()
+
+        status = cw.upsert(self.data, self.row)
+
+        self.assertEqual(status, "unchanged")  # tags are not a source field
+        self.assertEqual(self.path.read_bytes(), edited)
+
+    def test_tags_survive_a_source_driven_rewrite(self) -> None:
+        self.write_initial()
+        self.edit("submissions: []", "submissions: []\ntags: [ai, agents]")
+
+        status = cw.upsert(self.data, sample_row(location="Barcelona, Spain"))
+
+        self.assertEqual(status, "updated")
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("location: Barcelona, Spain", text)  # source field updated
+        self.assertIn("tags: [ai, agents]", text)          # user tags kept
+
+    def test_block_form_tags_survive_a_rewrite_verbatim(self) -> None:
+        self.write_initial()
+        self.edit("submissions: []", "submissions: []\ntags:\n  - conference/ai\n  - speaking")
+
+        cw.upsert(self.data, sample_row(location="Barcelona, Spain"))  # forces a rewrite
+
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("tags:\n  - conference/ai\n  - speaking", text)
+        self.assertEqual(
+            cw._read_frontmatter(self.path)[0]["tags"], ["conference/ai", "speaking"]
+        )
+
+    def test_tags_survive_next_to_shortlist_and_notes(self) -> None:
+        self.write_initial()
+        self.edit("shortlist: false", "shortlist: true\ntags: [shortlist]")
+        self.edit("_Add notes here._", "Worth submitting.")
+
+        cw.upsert(self.data, sample_row(location="Barcelona, Spain"))
+
+        fm = self.frontmatter()
+        self.assertTrue(fm["shortlist"])
+        self.assertEqual(fm["tags"], ["shortlist"])
+        self.assertIn("Worth submitting.", self.path.read_text(encoding="utf-8"))
+
+    def test_normalize_preserves_tags_and_is_idempotent(self) -> None:
+        self.write_initial()
+        self.edit("submissions: []", "submissions: []\ntags: [ai, agents]")
+
+        self.assertTrue(cw.normalize_file(self.path))
+        after_first = self.path.read_bytes()
+        self.assertIn(b"tags: [ai, agents]", after_first)
+        cw.normalize_file(self.path)
+        self.assertEqual(self.path.read_bytes(), after_first)  # idempotent
 
 
 class TestSourcePrecedence(WriterTestCase):

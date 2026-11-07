@@ -156,7 +156,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `event_url`,
   `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
   `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
-  `my_tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
+  `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
 - **A refresh only rewrites a note whose source properties actually changed.** Before
   writing, `upsert` compares each source-owned property in the existing note (semantic
   compare — quoting/formatting differences do not count) and skips the write when all
