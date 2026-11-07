@@ -5,10 +5,12 @@ Field notes for this code folder. The procedure an agent should follow is in
 and the shape each CFP note must take.
 
 Code and support files live in this folder (the repo). The Obsidian
-vault's `30-speaking-talks/cfps/` folder contains only `data/` and `archived/`. This folder's `data`
+vault's `cfps/` folder contains only `data/` and `archived/`. This folder's `data`
 and `archived` entries are relative symlinks to those vault directories, so the existing
 commands operate on the notes in place. On a fresh clone the two symlinks must be created
 first (`ln -s` commands in README › Quick start).
+
+This folder is a git repo with `origin` → `git@github.com:sujee/cfp-tracker.git`.
 
 Keeps a set of **one note per conference** under `data/`, refreshed from public CFP feeds
 (developers.events, cfp.ninja, confs.tech, and hand-curated `input/*.md`). The notes are the
@@ -95,6 +97,15 @@ Everything an agent needs is here, deliberately:
 
 Do not replace the `data/` or `archived/` symlinks with ordinary directories: a refresh would
 then write outside the vault. The Python sources and docs are real files in this code folder.
+
+## Git
+
+- **Never commit to git automatically.** Never push automatically. **Always ask
+  permission before `git commit` or `git push`** — a recent commit in this session does not
+  imply consent for the next one; ask each time.
+- `data/` and `archived/` are gitignored symlinks into the vault (`README.md` › Quick start
+  creates them). Never force-add their contents, and never replace them with real
+  directories.
 
 ## Note shape
 

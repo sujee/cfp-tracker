@@ -1,4 +1,4 @@
-# cfps pipeline dependencies  (30-speaking-talks/cfps)
+# cfps pipeline dependencies  (cfps)
 #
 #   pip install -r requirements.txt
 #

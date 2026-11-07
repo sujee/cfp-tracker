@@ -31,7 +31,8 @@ TOPICS = {
     "open-weight",
     "opensource",
     "python",
-    "programming"
+    "programming",
+    "robotics",
     "software-development",
     "software-engineering"
 }

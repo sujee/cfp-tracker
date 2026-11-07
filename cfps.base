@@ -1,0 +1,358 @@
+filters:
+  and:
+    - type == "cfp"
+formulas:
+  cfp_title: link(file.path, if(name, name, file.name))
+properties:
+  formula.cfp_title:
+    displayName: Event
+  shortlist:
+    displayName: Shortlist
+  country:
+    displayName: Country
+  event_date:
+    displayName: Event date
+  location:
+    displayName: Location
+  submissions:
+    displayName: Submissions
+  cfp_close:
+    displayName: CFP close
+  topics:
+    displayName: Topics
+  benefits:
+    displayName: Benefits
+  cfp_url:
+    displayName: CFP link
+  event_url:
+    displayName: Event link
+views:
+  - type: table
+    name: All CFPs
+    filters:
+      and:
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 201
+      note.topics: 181
+      note.event_url: 153
+      note.cfp_url: 169
+  - type: table
+    name: Short listed
+    filters:
+      and:
+        - shortlist == true
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Submitted
+    filters:
+      and:
+        - list(submissions).length > 0
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 159
+      note.topics: 181
+      note.event_url: 153
+      note.cfp_url: 169
+  - type: table
+    name: Upcoming (> -30 days)
+    filters:
+      and:
+        - cfp_close >= today() - "30d"
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Upcoming (> today)
+    filters:
+      and:
+        - cfp_close >= today()
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - languages
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      note.shortlist: 65
+      formula.cfp_title: 250
+      note.location: 205
+      note.topics: 181
+      note.event_url: 212
+      note.cfp_url: 253
+  - type: table
+    name: Closed (90d)
+    filters:
+      and:
+        - cfp_close < today() - "30d"
+        - cfp_close >= today() - "90d"
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Conf in USA
+    filters:
+      and:
+        - country == "USA"
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Conf outside USA
+    filters:
+      and:
+        - country != "USA"
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Online
+    filters:
+      and:
+        - country == "Online"
+        - '!file.path.startsWith("cfps/archived/")'
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.event_date: 139
+      note.location: 127
+  - type: table
+    name: Local events
+    filters:
+      and:
+        - '!file.path.startsWith("cfps/archived/")'
+        - or:
+            - location.contains("San Francisco")
+            - location.contains("San Jose")
+            - location.contains("Oakland")
+            - location.contains("Berkeley")
+            - location.contains("Santa Clara")
+            - location.contains("Sunnyvale")
+            - location.contains("Palo Alto")
+            - location.contains("Mountain View")
+            - location.contains("Cupertino")
+            - location.contains("Redwood")
+            - location.contains("Menlo Park")
+            - location.contains("San Mateo")
+            - location.contains("Milpitas")
+            - location.contains("Fremont")
+            - location.contains("Hayward")
+            - location.contains("Emeryville")
+            - location.contains("Los Altos")
+            - location.contains("Los Gatos")
+            - location.contains("Pleasanton")
+            - location.contains("Livermore")
+            - location.contains("Bay Area")
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 245
+      note.cfp_url: 253
+      note.event_url: 212
+  - type: table
+    name: By source
+    filters:
+      and:
+        - '!file.path.startsWith("cfps/archived/")'
+    groupBy:
+      property: source
+      direction: ASC
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: By country
+    filters:
+      and:
+        - '!file.path.startsWith("cfps/archived/")'
+    groupBy:
+      property: country
+      direction: ASC
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Archived
+    filters:
+      and:
+        - file.path.startsWith("cfps/archived/")
+    order:
+      - cfp_close
+      - shortlist
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: DESC

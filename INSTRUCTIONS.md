@@ -2,8 +2,8 @@
 
 Agent-facing instructions for this code folder. Everything needed is here: no other skill or
 outside docs. The CFP notes stay in the Obsidian vault. This folder's `data/` and `archived/`
-entries are relative symlinks to `30-speaking-talks/cfps/data/` and
-`30-speaking-talks/cfps/archived/` in that vault. On a fresh clone they don't exist yet —
+entries are relative symlinks to `cfps/data/` and
+`cfps/archived/` in that vault. On a fresh clone they don't exist yet —
 run the two `ln -s` commands in README › Quick start first.
 
 **Trigger:** when the user says **“update cfps”** (launched in this folder), run this procedure.
@@ -102,7 +102,8 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   deadline strings. The scripts fetch the JSON live.
 - Rows are copied from the sources, not curated by hand. If a value looks wrong, check the
   source before "fixing" it in a note.
-- Do not commit anything to git unless asked.
+- Do not commit or push anything to git unless asked. Always ask permission first — never
+  commit or push automatically.
 
 ## Sources
 
