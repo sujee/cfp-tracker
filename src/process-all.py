@@ -107,14 +107,15 @@ def main() -> int:
     archived = 0
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        dev_m, confs_m, ninja_m, manual_m = (
-            tmp / f"{n}.json" for n in ("dev", "confs", "ninja", "manual")
+        dev_m, confs_m, ninja_m, manual_m, adato_m = (
+            tmp / f"{n}.json" for n in ("dev", "confs", "ninja", "manual", "adato")
         )
 
         steps = [
             [sys.executable, str(here / "process-developer-events.py"), "--out", str(data_dir), "--manifest", str(dev_m), *rest],
             [sys.executable, str(here / "process-cfp-ninja.py"), "--out", str(data_dir), "--manifest", str(ninja_m)],
             [sys.executable, str(here / "process-confs-tech.py"), "--out", str(data_dir), "--manifest", str(confs_m)],
+            [sys.executable, str(here / "process-adato-tracker.py"), "--out", str(data_dir), "--manifest", str(adato_m)],
         ]
         if input_dir.is_dir():
             steps.append(
@@ -137,7 +138,7 @@ def main() -> int:
         if not args.no_archive and data_dir.is_dir():
             cmd = [sys.executable, str(here / "archive-orphans.py"), "--data", str(data_dir),
                    "--archive", str(archive_dir)]
-            for m in (dev_m, confs_m, ninja_m, manual_m):
+            for m in (dev_m, confs_m, ninja_m, manual_m, adato_m):
                 cmd += ["--manifest", str(m)]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.stdout:

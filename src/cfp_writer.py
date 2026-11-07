@@ -49,7 +49,16 @@ LIST_FIELDS = ("topics", "benefits", "languages")
 # Lower index = higher priority. Several conferences appear in more than one
 # feed and map to the same slug; the lower-priority source must not overwrite the
 # note a higher-priority one already owns (they disagree on location/country/source).
-SOURCE_PRIORITY = {"manual": 0, "developers.events": 1, "cfp.ninja": 2, "confs.tech": 3}
+SOURCE_PRIORITY = {
+    "manual": 0,
+    "developers.events": 1,
+    "cfp.ninja": 2,
+    "confs.tech": 3,
+    # adato-tracker is an aggregator over the same feeds (developers.events,
+    # Sessionize, …) and carries no topics/benefits/languages, so it ranks
+    # lowest: it fills gaps without overwriting a richer note.
+    "adato-tracker": 4,
+}
 
 
 def _source_priority(source: str) -> int:

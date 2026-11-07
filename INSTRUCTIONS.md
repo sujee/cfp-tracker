@@ -18,8 +18,8 @@ uv run python src/process-all.py      # every source → data/   (uses the proje
 # or, with your own python + PyYAML installed:  python3 src/process-all.py
 ```
 
-`src/process-all.py` runs all four sources: developers.events, cfp.ninja, confs.tech, and any
-hand-curated rows in `input/*.md`.
+`src/process-all.py` runs all five sources: developers.events, cfp.ninja, confs.tech,
+adato-tracker, and any hand-curated rows in `input/*.md`.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -114,10 +114,13 @@ Merged into `data/`:
   dates and speaker benefits (`travel`/`hotel`/`honorarium` → the note's `benefits`). The
   submission page is `cfp.ninja/e/<slug>`; filter on `cfp_close_at`, never `cfp_status`.
 - **confs.tech** — `github.com/tech-conferences/conference-data` JSON (`cfpUrl` + `cfpEndDate`).
+- **adato-tracker** — the `tablesorter` table on `adatosystems.com/cfp-tracker/` (Leon Adato).
+  Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the same
+  feeds, so it ranks lowest and only fills gaps.
 - **`input/*.md`** — manually curated rows, merged by `src/process-manual-input.py`.
 
 When two sources carry the same conference (same slug), the higher-priority one owns the note:
-`manual` > `developers.events` > `cfp.ninja` > `confs.tech`. A lower-priority source skips a note
+`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`. A lower-priority source skips a note
 a higher one already owns, so overlapping feeds do not overwrite each other. The same rule now
 applies when the two sources *name* one CFP differently and it would slugify twice: `upsert`
 matches on the submission URL (gated by name similarity, so a form reused across distinct events
@@ -137,7 +140,7 @@ file and the README in the same change.
 - `INSTRUCTIONS.md` — this file: the procedure.
 - `AGENTS.md` — the "why": data shapes, note shape, pitfalls, verification.
 - `src/process-all.py` — wrapper that runs every source into `data/`.
-- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-manual-input.py` — per-source fetchers.
+- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-manual-input.py` — per-source fetchers.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.

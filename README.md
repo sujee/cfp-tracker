@@ -89,6 +89,7 @@ Run a single source:
 python3 src/process-developer-events.py --out data
 python3 src/process-cfp-ninja.py --out data
 python3 src/process-confs-tech.py --out data
+python3 src/process-adato-tracker.py --out data
 python3 src/process-manual-input.py --out data
 ```
 
@@ -110,9 +111,10 @@ A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `Y
 | **developers.events** | `all-cfps.json` + `all-events.json`, fetched live. `untilDate` is the deadline (epoch ms). |
 | **cfp.ninja** | Open-source CFP platform ([sreday/cfp.ninja](https://github.com/sreday/cfp.ninja)); public API, no auth. Includes location, tags, and speaker benefits. |
 | **confs.tech** | [tech-conferences/conference-data](https://github.com/tech-conferences/conference-data) (MIT). Has `cfpUrl` + `cfpEndDate`; no `ai` topic file, so AI events sit under `general` or a language topic. |
+| **adato-tracker** | The `tablesorter` table on [adatosystems.com/cfp-tracker](https://adatosystems.com/cfp-tracker/) (Leon Adato). Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the other feeds, so it ranks lowest and only fills gaps. |
 | **`input/*.md`** | Hand-curated rows, merged by `src/process-manual-input.py`. |
 
-If two sources carry the same conference, the higher-priority one owns the note: `manual` > `developers.events` > `cfp.ninja` > `confs.tech`.
+If two sources carry the same conference, the higher-priority one owns the note: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`.
 
 **Not yet scripted:** cfp.fru.dev (cross-check), events.fru.dev, dev.events, pretalx.com, Sessionize (a link target only).
 **Dead, do not add:** papercall.io (shut down) and CFP Land.

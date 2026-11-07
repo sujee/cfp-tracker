@@ -17,6 +17,7 @@ tests — this script just documents/reproduces how they were chosen.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +61,20 @@ CFP_NINJA_PICKS = [
     "sreday-2027-katowice-q2",        # deadline in the following year
     "platformday-2027-london-q2",     # in-person, UK
     "sreday-2025-lisbon-q4",          # long-past deadline (filtered out)
+]
+
+# adato-tracker rows kept in the sample (exact event names in the table).
+ADATO_NAMES = [
+    ".NET Conf 2026 | Building the Next Generation of .NET Applications",  # VIRTUAL
+    "Community Networks Conference",                 # city + state, CFP URL
+    "Analytics and Data Summit 2027",                # city + state
+    "Global AI Sarasota \u2013 Kickoff",             # entity in name, VIRTUAL
+    "Dakar Bitcoin Days IV",                         # name hits IGNORE_TOPICS
+    "SOAHR 2027 \u2013 SHRM-Atlanta's Annual Conference",  # entity + apostrophe
+    "Mobile Makers",                                 # name hits IGNORE_TOPICS
+    "AI Agents Day",                                 # VIRTUAL, mid-range date
+    "SunSecCon",                                     # city + state
+    "Conf42 MLOps 2027",                             # VIRTUAL, far-future deadline
 ]
 
 
@@ -112,8 +127,40 @@ def extract_cfp_ninja() -> None:
     print(f"cfp.ninja: {len(picks)} events")
 
 
+def extract_adato_tracker() -> None:
+    html = (CACHE / "adato-tracker.html").read_text(encoding="utf-8")
+    table = re.search(r"<table[^>]*tablesorter.*?</table>", html, re.S).group(0)
+    rows = re.findall(r"<tr.*?</tr>", table, re.S)
+
+    def _name(row: str) -> str:
+        cell = re.search(r"<t[hd].*?</t[hd]>", row, re.S)
+        return re.sub(r"<[^>]+>", "", cell.group(0)).strip() if cell else ""
+
+    picked: dict[str, str] = {}
+    for row in rows:
+        n = _name(row)
+        if n in ADATO_NAMES and n not in picked:
+            picked[n] = row
+    ordered = [picked[n] for n in ADATO_NAMES if n in picked]
+    wrapper = (
+        '<table class="tablesorter">\n<thead>\n<tr>\n'
+        "<th>Event Name</th>\n<th>City</th>\n<th>State</th>\n"
+        '<th class="dateFormat-ddd m/d/yy">Event Start</th>\n'
+        '<th class="dateFormat-ddd m/d/yy">Event End</th>\n'
+        '<th class="dateFormat-ddd m/d/yy">CFP Close</th>\n'
+        "<th>Event URL</th>\n<th>CFP URL</th>\n</tr>\n</thead>\n<tbody>\n"
+        + "\n".join(r.strip() for r in ordered)
+        + "\n</tbody>\n</table>\n"
+    )
+    dest = OUT / "adato-tracker"
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "cfp-tracker.sample.html").write_text(wrapper, encoding="utf-8")
+    print(f"adato-tracker: {len(ordered)} rows")
+
+
 if __name__ == "__main__":
     extract_developers_events()
     extract_confs_tech()
     extract_cfp_ninja()
     extract_manual()
+    extract_adato_tracker()

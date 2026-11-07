@@ -13,7 +13,7 @@ first (`ln -s` commands in README › Quick start).
 This folder is a git repo with `origin` → `git@github.com:sujee/cfp-tracker.git`.
 
 Keeps a set of **one note per conference** under `data/`, refreshed from public CFP feeds
-(developers.events, cfp.ninja, confs.tech, and hand-curated `input/*.md`). The notes are the
+(developers.events, cfp.ninja, confs.tech, adato-tracker, and hand-curated `input/*.md`). The notes are the
 data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`).
 
 ## When to use
@@ -80,6 +80,8 @@ Everything an agent needs is here, deliberately:
 - `src/process-developer-events.py` — developers.events fetcher (was `src/build-open-cfps.py`; that name remains as a shim).
 - `src/process-cfp-ninja.py` — cfp.ninja fetcher (public `api/v0/events`).
 - `src/process-confs-tech.py` — confs.tech fetcher.
+- `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
+  `adatosystems.com/cfp-tracker/`).
 - `src/process-manual-input.py` — merges hand-curated `input/*.md`.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
@@ -90,7 +92,7 @@ Everything an agent needs is here, deliberately:
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
 - `README.md` — overview and the source list.
-- `tests/` — stdlib `unittest` suite for the writer, the run summary, and all four parsers
+- `tests/` — stdlib `unittest` suite for the writer, the run summary, and all five parsers
   (`python3 -m unittest discover -s tests -v`); fixtures under `tests/fixtures/` are real
   slices of the downloaded data.
 - `tmp/cfps.md` — an earlier generated report, now a legacy/scratch copy kept in the excluded `tmp/`.
@@ -123,7 +125,7 @@ benefits: [travel, hotel]      # optional; only when the source states it (cfp.n
 languages: [english]           # optional; from developers.events event tags; other sources carry none
 event_url: https://…           # conference site
 cfp_url: https://…             # CFP / submission URL
-source: developers.events      # developers.events | cfp.ninja | confs.tech | manual
+source: developers.events      # developers.events | cfp.ninja | confs.tech | adato-tracker | manual
 shortlist: false               # user flag, preserved across runs
 submissions: []                # wiki links (a list), preserved across runs
 ```
@@ -181,7 +183,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
 - **Overlapping feeds: a higher-priority source wins a shared note.** Some conferences appear in
   both developers.events and confs.tech (or cfp.ninja) and normalize to the same slug. Without a
   rule both would write it every run (confs.tech last, blanking `country`). `cfp_writer.SOURCE_PRIORITY`
-  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech`) makes a lower-priority source skip a
+  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`) makes a lower-priority source skip a
   note a higher-priority one already owns, so a no-op refresh reports 0 updated.
 - **Two feeds can name one CFP differently, so it slugifies twice** (`SCaLE` from confs.tech vs
   `Southern California Linux Expo - SCaLE 24x` from developers.events — same `cfp_url`, two
