@@ -128,6 +128,8 @@ cfp_url: https://…             # CFP / submission URL
 source: developers.events      # developers.events | cfp.ninja | confs.tech | adato-tracker | manual
 shortlist: false               # user flag, preserved across runs
 submissions: []                # wiki links (a list), preserved across runs
+created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
+updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
 ```
 
 Then a body with a `## Notes` heading and the free-form notes. **Notes live only in the body**
@@ -159,11 +161,25 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
   `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
+- **`created` and `updated` are pipeline stamps, not source fields.** `created` is written
+  when the note first appears and preserved afterwards; `updated` is advanced to the run date
+  only when a source change rewrites the note (a no-op refresh changes neither). They are
+  deliberately **not** part of the source-property compare: comparing them with today would
+  rewrite every note on every run. A missing or non-`YYYY-MM-DD` stamp back-fills without
+  counting as an update: a note that has one stamp copies it to the other, so existing notes
+  start with `updated` equal to `created`, and a hand-typed valid date is left alone.
+  `normalize_file` applies the same back-fill and preserves present stamps (a shape pass is
+  not a data update), which is how the whole tree was populated. For notes that predate the
+  stamps, `created`/`updated` were recovered from the note's first add commit in the vault's
+  git history (following renames), so they carry the real first-seen date rather than the day
+  the stamps were introduced.
 - **A refresh only rewrites a note whose source properties actually changed.** Before
   writing, `upsert` compares each source-owned property in the existing note (semantic
   compare — quoting/formatting differences do not count) and skips the write when all
   match, so untouched notes keep their mtime and your edits are never clobbered. Extra
-  properties are re-emitted verbatim, including block lists and nested maps.
+  properties are re-emitted verbatim, including block lists and nested maps. The one
+  exception is a note missing `created`/`updated`: that back-fills once, then the note is
+  unchanged again.
 - **Tests are required for every code change.** `python3 -m unittest discover -s tests -v`
   (stdlib only) covers the change detection and preservation rules. Any `src/` edit must keep
   the suite passing — update tests whose expectations legitimately changed, and add tests for

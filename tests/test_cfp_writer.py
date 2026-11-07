@@ -119,6 +119,167 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertIn("type: cfp", text)
 
 
+class TestCreatedUpdated(WriterTestCase):
+    """``created``/``updated`` are pipeline stamps written on every note.
+
+    ``created`` is sticky (set at note birth, preserved across refreshes);
+    ``updated`` advances to the run date only when a source change rewrites
+    the note. A stamp back-fill (missing/garbled) mirrors ``created`` instead
+    of counting as an update. Neither is part of the source-prop compare, so a
+    no-op refresh stays byte-for-byte untouched.
+    """
+
+    def test_stamps_are_writer_owned_keys(self) -> None:
+        self.assertIn("created", cw.KNOWN_FM_KEYS)
+        self.assertNotIn("created", cw.SOURCE_SCALAR_FIELDS)
+        self.assertNotIn("created", cw.LIST_FIELDS)
+
+    def test_new_note_gets_today_for_both_stamps(self) -> None:
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+
+    def test_noop_refresh_preserves_stamps_and_touches_nothing(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        before = self.path.read_bytes()
+        mtime = self.path.stat().st_mtime_ns
+
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-07"), "unchanged")
+
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.path.stat().st_mtime_ns, mtime)
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+
+    def test_source_change_bumps_updated_but_preserves_created(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-09"),
+            "updated",
+        )
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 9))
+
+    def test_note_missing_stamps_is_backfilled_on_refresh(self) -> None:
+        # A note created before the stamps existed: props match, so the only
+        # reason to rewrite is the missing stamp back-fill.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            "---\ntype: cfp\nname: Power Platform Days Barcelona 2026\n"
+            "event_date: 2026-12-19\nlocation: Online\ncountry: Online\n"
+            "cfp_close: 2026-11-30\ntopics: [microsoft, cloud, automation]\n"
+            "event_url: https://powerplatform.com\n"
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/\n"
+            "source: developers.events\nshortlist: false\nsubmissions: []\n---\n\n"
+            "## Notes\n\n_Add notes here._\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+
+    def test_garbled_stamp_backfills_to_created(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit("updated: 2026-11-06", 'updated: "soon"')
+        # Props match, so this is a stamp back-fill, not a data update:
+        # ``updated`` mirrors ``created`` instead of jumping to the run date.
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+
+    def test_missing_updated_backfills_to_created(self) -> None:
+        # An existing note that already carries ``created`` gets ``updated``
+        # equal to it, not to today's date.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            "---\ntype: cfp\nname: Power Platform Days Barcelona 2026\n"
+            "event_date: 2026-12-19\nlocation: Online\ncountry: Online\n"
+            "cfp_close: 2026-11-30\ntopics: [microsoft, cloud, automation]\n"
+            "event_url: https://powerplatform.com\n"
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/\n"
+            "source: developers.events\nshortlist: false\nsubmissions: []\n"
+            "created: 2025-03-04\n---\n\n## Notes\n\n_Add notes here._\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+
+    def test_missing_created_backfills_to_updated(self) -> None:
+        # The mirror case: a lone ``updated`` dates ``created``, so a back-fill
+        # never produces created > updated.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            "---\ntype: cfp\nname: Power Platform Days Barcelona 2026\n"
+            "event_date: 2026-12-19\nlocation: Online\ncountry: Online\n"
+            "cfp_close: 2026-11-30\ntopics: [microsoft, cloud, automation]\n"
+            "event_url: https://powerplatform.com\n"
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/\n"
+            "source: developers.events\nshortlist: false\nsubmissions: []\n"
+            "updated: 2025-03-04\n---\n\n## Notes\n\n_Add notes here._\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+
+    def test_user_stamps_do_not_force_rewrites(self) -> None:
+        # Hand-maintained stamps are not compared: a note whose stamps differ
+        # from today's date still reports unchanged.
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit("created: 2026-11-06", "created: 2025-01-02")
+        self.assertEqual(cw.upsert(self.data, self.row, today="2030-05-05"), "unchanged")
+        self.assertEqual(self.frontmatter()["created"], datetime.date(2025, 1, 2))
+
+    def test_normalize_backfills_missing_stamps_and_is_idempotent(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            "---\ntype: cfp\nname: Power Platform Days Barcelona 2026\n"
+            "event_date: 2026-12-19\nlocation: Online\ncountry: Online\n"
+            "cfp_close: 2026-11-30\ntopics: [microsoft, cloud, automation]\n"
+            "event_url: https://powerplatform.com\n"
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/\n"
+            "source: developers.events\nshortlist: false\nsubmissions: []\n---\n\n"
+            "## Notes\n\n_Add notes here._\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-06"))
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        after = self.path.read_bytes()
+        cw.normalize_file(self.path, today="2026-11-06")
+        self.assertEqual(self.path.read_bytes(), after)  # idempotent: stamps kept
+
+    def test_normalize_preserves_existing_stamps(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit("updated: 2026-11-06", "updated: 2026-11-07")
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-20"))
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 7))
+
+    def test_normalize_mirrors_created_when_updated_is_missing(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            "---\ntype: cfp\nname: Power Platform Days Barcelona 2026\n"
+            "event_date: 2026-12-19\nlocation: Online\ncountry: Online\n"
+            "cfp_close: 2026-11-30\ntopics: [microsoft, cloud, automation]\n"
+            "event_url: https://powerplatform.com\n"
+            "cfp_url: https://sessionize.com/power-platform-days-barcelona-2026/\n"
+            "source: developers.events\nshortlist: false\nsubmissions: []\n"
+            "created: 2025-03-04\n---\n\n## Notes\n\n_Add notes here._\n",
+            encoding="utf-8",
+        )
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-09"))
+        fm = self.frontmatter()
+        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+
+
 class TestUserContentPreserved(WriterTestCase):
     def test_user_edits_do_not_trigger_a_rewrite(self) -> None:
         self.write_initial()
@@ -879,6 +1040,7 @@ class TestCfpTemplate(unittest.TestCase):
     REQUIRED = {
         "type", "name", "event_date", "location", "country", "cfp_close",
         "topics", "event_url", "cfp_url", "source", "shortlist", "submissions",
+        "created", "updated",
     }
 
     @unittest.skipUnless(TEMPLATE, "templates/cfp-template.md not found")

@@ -197,6 +197,14 @@ KNOWN_FM_KEYS = {
     "source",
     "shortlist",
     "submissions",
+    # Pipeline timestamps. ``created`` is the note's first-seen date, set once
+    # and kept; ``updated`` is bumped to the run date whenever the pipeline
+    # rewrites the note because its source data changed. They are intentionally
+    # NOT part of ``_source_props_match``: comparing them against today would
+    # force a rewrite of every note on every run, so they are only checked for
+    # validity (a missing/garbled stamp back-fills on the next refresh).
+    "created",
+    "updated",
     # Legacy keys kept "known" (so they are consumed, not preserved as user
     # metadata) — a migrated note must not keep a stale ``submission`` or
     # ``conf_date`` line next to the new key.
@@ -300,6 +308,24 @@ def _as_bool(value) -> bool:
     if isinstance(value, bool):
         return value
     return _as_str(value).strip().lower() in ("true", "yes", "on", "1")
+
+
+# The pipeline stamps ``created``/``updated`` as plain ISO dates; a stamp is
+# "valid" when it matches exactly that shape. The writer knows nothing about
+# what the source data was on those days, so the check is format-only.
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _valid_iso_date(value) -> bool:
+    """True when *value* is a non-empty ``YYYY-MM-DD`` stamp."""
+    return bool(_ISO_DATE_RE.match(_as_str(value)))
+
+
+def _today_str(today=None) -> str:
+    """Today's ISO date; *today* (a ``YYYY-MM-DD`` string) overrides for tests."""
+    if today:
+        return str(today)
+    return datetime.date.today().isoformat()
 
 
 def _read_submissions(fm: dict) -> list:
@@ -431,7 +457,15 @@ def _extra_frontmatter_lines(text: str) -> list[str]:
     return out
 
 
-def _render(row: dict, shortlist: str, submissions: list, notes: str, extras: list[str] | None = None) -> str:
+def _render(
+    row: dict,
+    shortlist: str,
+    submissions: list,
+    notes: str,
+    created: str,
+    updated: str,
+    extras: list[str] | None = None,
+) -> str:
     fm = [
         "---",
         "type: cfp",
@@ -457,6 +491,8 @@ def _render(row: dict, shortlist: str, submissions: list, notes: str, extras: li
         f"source: {_yaml_str(row.get('source', ''))}",
         f"shortlist: {shortlist}",
         f"submissions: {_yaml_list(submissions)}",
+        f"created: {_yaml_str(created)}",
+        f"updated: {_yaml_str(updated)}",
     ]
     fm.extend(extras or [])  # user metadata, preserved verbatim
     fm += [
@@ -528,11 +564,18 @@ def note_path(data_dir: Path, row: dict) -> Path:
     return data_dir / date / f"{slug}.md"
 
 
-def upsert(data_dir: Path, row: dict) -> str:
+def upsert(data_dir: Path, row: dict, today=None) -> str:
     """Write/refresh one note; return ``"new"``, ``"updated"``, ``"unchanged"`` or ``"skipped"``.
 
     ``"unchanged"`` means the note is current — every source-derived property
-    already matches the file (see :func:`_source_props_match`).
+    already matches the file (see :func:`_source_props_match`) and the
+    ``created``/``updated`` stamps are valid ISO dates.
+
+    The stamps are writer-owned but deliberately excluded from the source-prop
+    compare: a no-op refresh must not touch anything. ``created`` is preserved
+    once set; ``updated`` advances to *today* only when a source change rewrites
+    the note. A missing/garbled stamp back-fills without counting as an update
+    (``updated`` mirrors ``created``), so existing notes start with both equal.
 
     ``"skipped"`` means this row deliberately wrote nothing because another note
     owns the CFP: a higher-priority source already owns the same slug (see
@@ -590,7 +633,8 @@ def upsert(data_dir: Path, row: dict) -> str:
     except FrontmatterError:
         print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
         return "skipped"
-    if _source_props_match(fm, row):
+    props_match = _source_props_match(fm, row)
+    if props_match and _valid_iso_date(fm.get("created")) and _valid_iso_date(fm.get("updated")):
         return "unchanged"
 
     # A note another (higher-priority) source already owns is left as-is. The
@@ -606,7 +650,22 @@ def upsert(data_dir: Path, row: dict) -> str:
     notes = _extract_body_notes(body)
     extras = _extra_frontmatter_lines(existing)
 
-    status = _write_if_changed(path, _render(row, shortlist, submissions, notes, extras))
+    today_iso = _today_str(today)
+    created = _as_str(fm.get("created"))
+    updated = _as_str(fm.get("updated"))
+    if not _valid_iso_date(created):
+        # Mirror an existing ``updated`` so a back-fill never dates ``created``
+        # after ``updated``; a note with neither stamp starts both at today.
+        created = updated if _valid_iso_date(updated) else today_iso
+    if not props_match:
+        # A real source change is an update of the note: advance ``updated``.
+        updated = today_iso
+    elif not _valid_iso_date(updated):
+        # Stamp back-fill only, not a data update: an existing note's
+        # ``updated`` starts equal to its ``created``.
+        updated = created
+
+    status = _write_if_changed(path, _render(row, shortlist, submissions, notes, created, updated, extras))
     if key:
         # Keep the in-process index current so a later row for the same URL sees
         # the note this run just wrote.
@@ -632,12 +691,15 @@ def upsert_counted(data_dir: Path, row: dict, counts: dict, produced: list) -> s
     return status
 
 
-def normalize_file(path: Path) -> bool:
+def normalize_file(path: Path, today=None) -> bool:
     """Rewrite one existing note in place to the current frontmatter shape.
 
     Drops any frontmatter ``notes`` (kept only in the body), re-quotes every
-    value safely, and re-renders the body. Returns False when there is no
-    frontmatter block or the block is not valid YAML.
+    value safely, and re-renders the body. Missing ``created``/``updated``
+    stamps back-fill with today (or mirror the other stamp when one exists);
+    stamps already present are preserved verbatim (re-emitting the shape is not
+    a data update). Returns False when there is no frontmatter block or the
+    block is not valid YAML.
     """
     try:
         fm, body = _read_frontmatter(path)
@@ -661,5 +723,12 @@ def normalize_file(path: Path) -> bool:
     submissions = _read_submissions(fm)
     notes = _extract_body_notes(body)
     extras = _extra_frontmatter_lines(text)
-    _write_if_changed(path, _render(row, shortlist, submissions, notes, extras))
+    created = _as_str(fm.get("created"))
+    updated = _as_str(fm.get("updated"))
+    if not _valid_iso_date(created):
+        created = updated if _valid_iso_date(updated) else _today_str(today)
+    if not _valid_iso_date(updated):
+        # A shape pass is not a data update: back-filled stamps stay equal.
+        updated = created
+    _write_if_changed(path, _render(row, shortlist, submissions, notes, created, updated, extras))
     return True

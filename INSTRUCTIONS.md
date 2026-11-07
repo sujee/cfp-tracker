@@ -37,7 +37,7 @@ adato-tracker, and any hand-curated rows in `input/*.md`.
   `--out` directory).
 - After a schema change, run `python3 src/normalize-data.py` to re-emit existing notes to the
   current shape (drops any frontmatter `notes`, re-quotes values, canonicalises `country` via
-  `src/country.py`). It is idempotent.
+  `src/country.py`, back-fills missing `created`/`updated` stamps). It is idempotent.
 
 ## Checklist
 
@@ -87,10 +87,16 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
 ## Rules
 
 - Notes are generated. Do not hand-edit the source-owned fields (`name`, `event_date`,
-  `location`, `country`, `cfp_close`, `topics`, `benefits`, `languages`, `event_url`, `cfp_url`, `source`) —
-  they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`, the
-  `## Notes` body, and any extra frontmatter property you add. A note is only rewritten when one
-  of its source-owned properties changes, so a no-op refresh touches nothing.
+  `location`, `country`, `cfp_close`, `topics`, `benefits`, `languages`, `event_url`, `cfp_url`,
+  `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`,
+  the `## Notes` body, and any extra frontmatter property you add. A note is only rewritten when
+  one of its source-owned properties changes, so a no-op refresh touches nothing.
+- `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
+  first-seen date and is preserved. `updated` advances to the run date whenever a source change
+  rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp
+  back-fills on the next refresh without counting as an update (the note's two stamps are
+  copied from each other, so existing notes start with `updated` equal to `created`), and
+  `src/normalize-data.py` applies the same back-fill to the whole tree in one pass.
 - **Every code change must keep the tests green — and come with tests.** Run
   `python3 -m unittest discover -s tests -v` (stdlib only — no pytest) after any change to
   `src/`. Existing tests must pass: if a change legitimately alters behaviour, update the
