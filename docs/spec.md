@@ -213,6 +213,7 @@ Every source adapter passes a mapping with these logical fields to the shared wr
 |---|---|---:|---|
 | `name` | string | Yes in rendered output | Conference or CFP name. Some adapters reject empty names. |
 | `event_date` | string | Yes | Usually start date as `YYYY-MM-DD`, `TBA`, or source-specific fallback text. |
+| `event_type` | string | Writer-managed | Inferred when new/unset; an existing nonempty value is preserved. Current sources provide no standardized event-kind value. |
 | `location` | string | Yes | Display location; some sources use `—` when unknown. |
 | `country` | string | Yes | Canonicalized by the writer; empty means unknown. |
 | `cfp_close` | string | Yes | Usually `YYYY-MM-DD`; manual input may be free text, `—`, or `Unstated`. |
@@ -236,6 +237,7 @@ A generated note has the following shape and property order:
 type: cfp
 name: Example Conference 2027
 event_date: 2027-04-01
+event_type: conference
 location: Pasadena, CA (USA)
 country: USA
 cfp_close: 2026-11-01
@@ -272,6 +274,8 @@ The following scalar properties are source-owned and semantically compared on re
 - `source`
 
 `benefits` and `languages` are source-owned and compared as order-sensitive lists. `topics` is also compared order-sensitively, but only after its incoming source values have been merged into the existing list as specified in §6.4. It is cumulative rather than replace-on-refresh.
+
+`event_type` is writer-managed sticky metadata, not a source-owned scalar: it is inferred when unset and preserved thereafter as specified in §6.7. It does not participate in `_source_props_match`.
 
 `type: cfp` is fixed whenever the writer renders a note. It is not part of the source-property comparison.
 
@@ -338,6 +342,36 @@ If a target note contains invalid YAML or non-mapping frontmatter:
 4. Does not record that path as produced.
 
 A file with no frontmatter is not protected by that rule; a colliding path can be regenerated as a CFP note, and its old body is not guaranteed to survive.
+
+### 6.7 Event type classification and preservation
+
+`event_type` classifies the event independently of `type: cfp`, which identifies the note itself. The supported controlled values exposed by `EVENT_TYPES` are:
+
+```text
+conference | meetup | summit | workshop | hackathon | webinar | other
+```
+
+Current external sources do not expose a standardized event-kind property. The writer therefore resolves a new or unset event type as follows:
+
+1. If existing frontmatter has a nonempty `event_type`, use that value and do not re-infer it. A trimmed value is re-rendered when another change rewrites the note.
+2. Otherwise, if an incoming common row explicitly supplies a nonempty `event_type`, use it. This supports curated/programmatic callers even though current adapters do not supply one.
+3. Otherwise, call `infer_event_type(name)` using the first matching case-insensitive, word-boundary keyword rule in this order:
+   - `meetup`: `meetup`, `meetups`, `meet-up`, or `meet up` forms;
+   - `summit`: `summit` or `summits`;
+   - `workshop`: `workshop` or `workshops`;
+   - `hackathon`: `hackathon` or `hackathons`;
+   - `webinar`: `webinar` or `webinars`.
+4. If no keyword matches, default to `conference`. `other` is available for manual/source curation but is not automatically inferred.
+
+For names containing multiple keywords, rule order determines the result. An explicit `conference` keyword needs no pattern because conference is already the fallback.
+
+Once a value exists, it is sticky:
+
+- A manual override does not itself trigger a rewrite and survives later source-driven updates.
+- A changed incoming `event_type` does not replace an existing note's value.
+- A missing/blank value back-fills on `upsert` or `normalize_file`.
+- A backfill-only refresh can return `updated` because bytes changed, but valid `created` and `updated` stamps remain unchanged. A simultaneous real source-property change advances `updated` normally.
+- The next refresh with a present value is `unchanged` when all source properties and stamps are otherwise current.
 
 ## 7. Note identity and path rules
 
@@ -409,15 +443,17 @@ Before path comparison or rendering, the writer:
 1. Canonicalizes `country` with `normalize_country`.
 2. Removes `utm_*` query parameters from `cfp_url`.
 3. Removes `utm_*` query parameters from `event_url`.
-4. After reading existing frontmatter, merges incoming topics into existing topics according to §6.4.
+4. After reading existing frontmatter, preserves a nonempty `event_type` or infers/backfills a missing one according to §6.7.
+5. Merges incoming topics into existing topics according to §6.4.
 
-Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Topic changes trigger a rewrite only when they add a previously unseen topic; other source-owned properties retain their normal replacement semantics.
+Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Event-type edits alone do not force a rewrite. Topic changes trigger a rewrite only when they add a previously unseen topic; other source-owned properties retain their normal replacement semantics.
 
 ### 8.3 No-op invariant
 
 A note is `unchanged` only when:
 
 - Its frontmatter parses.
+- `event_type` is nonempty; its actual value need not equal a new inference because existing values are sticky. A missing value backfills instead of taking the no-op path.
 - Every source-owned scalar equals the normalized incoming value after YAML type normalization.
 - `benefits` and `languages` equal their incoming lists, including item order.
 - `topics` equals the cumulative merge of existing and incoming topics, so user additions, upstream removals, and upstream reordering alone do not force an update.
@@ -451,6 +487,7 @@ When source properties match but a stamp is missing or malformed, the writer bac
 | New note | Run date | Run date |
 | Real source property change | Existing value preserved | Run date |
 | No-op refresh | Unchanged | Unchanged |
+| Missing `event_type` backfill only | Preserved | Preserved when valid |
 | Only `created` is valid, stamp-only backfill | Preserved | Copy `created` |
 | Only `updated` is valid, stamp-only backfill | Copy `updated` | Preserved |
 | Both missing/invalid | Run date | Run date |
@@ -976,15 +1013,16 @@ For a file with valid, nonempty mapping frontmatter, normalization:
 
 1. Converts known scalar values to the writer's canonical strings.
 2. Uses legacy `conf_date` when `event_date` is empty.
-3. Converts topics, benefits, and languages through list normalization.
-4. Canonicalizes country.
-5. Removes UTM parameters from both URLs.
-6. Normalizes shortlist and submissions.
-7. Migrates legacy scalar submission where applicable.
-8. Extracts body notes.
-9. Preserves additional properties according to §6.3.
-10. Backfills timestamps according to §8.5 without advancing valid `updated`.
-11. Re-renders in canonical order and writes only if bytes differ.
+3. Preserves a nonempty `event_type` or infers/backfills a missing one according to §6.7.
+4. Converts topics, benefits, and languages through list normalization.
+5. Canonicalizes country.
+6. Removes UTM parameters from both URLs.
+7. Normalizes shortlist and submissions.
+8. Migrates legacy scalar submission where applicable.
+9. Extracts body notes.
+10. Preserves additional properties according to §6.3.
+11. Backfills timestamps according to §8.5 without advancing valid `updated`.
+12. Re-renders in canonical order and writes only if bytes differ.
 
 Normalization is intended to be idempotent. Its reported `normalized N notes` count is the number successfully processed, not necessarily the number whose bytes changed. Files returning false are counted as skipped and do not make the command fail.
 
@@ -1023,7 +1061,7 @@ Other 2xx statuses count as not-200. A 403 or 429 response means blocked/rate-li
 type == "cfp"
 ```
 
-Its `Event` formula links to `file.path`, displaying `name` when truthy and otherwise `file.name`.
+Its `Event` formula links to `file.path`, displaying `name` when truthy and otherwise `file.name`. The `event_type` property is registered with display name **Event type**, making it available to Base grouping/filter controls.
 
 Every live view separately excludes paths beginning with `cfps/archived/`; the Archived view selects that prefix. The archive exclusion is intentionally per-view because the global filter ANDs with each view. Live views do not positively restrict notes to `cfps/data/`.
 
@@ -1045,6 +1083,7 @@ The vault path literals are part of the configuration. Moving vault folders requ
 | **Local events** | Any configured Bay Area location substring matches. |
 | **By source** | Live notes grouped ascending by `source`. |
 | **By country** | Live notes grouped ascending by `country`. |
+| **By event type** | Live notes grouped ascending by `event_type`, with the type shown as a column, supporting separate browsing/filtering of conferences, meetups, and other classifications. |
 | **Archived** | Only notes below `cfps/archived/`; sorted by deadline descending. |
 
 All non-grouped live views sort `cfp_close` ascending. Grouped views also sort by deadline ascending within the grouping configuration.
@@ -1111,7 +1150,7 @@ uv run python -m unittest discover -s tests -v
 
 The suite is primarily offline and covers:
 
-- Writer rendering, identity, no-op behavior, preservation, precedence, duplicate matching, timestamps, UTM removal, and invalid YAML.
+- Writer rendering, identity, no-op behavior, topic merging, event-type inference/preservation/backfill, precedence, duplicate matching, timestamps, UTM removal, and invalid YAML.
 - Every source parser using real source slices under `tests/fixtures/`.
 - Country aliases.
 - Manifest and orphan movement behavior.
@@ -1251,3 +1290,7 @@ Similarly, when URL-based deduplication selects a winner, losing-note user conte
 - 403/429 and network errors do not prove a link is dead.
 - URL extraction is regular-expression based and does not support every legal Markdown destination or URL delimiter case.
 - The checker reads a single report, not the whole current note tree, so its coverage depends on the report supplied.
+
+### 17.11 Event type is heuristic metadata
+
+Because current feeds provide no authoritative event-kind value, an inferred `event_type` is only a name-based classification. A fallback value of `conference` does not prove that an event is a conference, and multi-keyword names use the fixed precedence in §6.7. Sticky preservation also means a later name change does not automatically reclassify an existing note; correcting or refining the type requires editing it explicitly or clearing it so it can be inferred again.

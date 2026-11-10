@@ -117,6 +117,7 @@ One note per conference, written by `src/cfp_writer.py`. Frontmatter:
 type: cfp
 name: <conference name>
 event_date: 2027-04-01          # start date only, clean YYYY-MM-DD (or "TBA")
+event_type: conference          # inferred: conference | meetup | summit | workshop | hackathon | webinar | other
 location: Pasadena, CA (USA)
 country: USA                   # canonical: USA | UK | Online | a country name | empty
 cfp_close: 2026-11-01          # deadline; may be free text ("Early 2027 / Unstated")
@@ -160,6 +161,13 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
   `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
+- **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`:
+  name keywords select `meetup` (including `meet-up`/`meet up`), `summit`, `workshop`,
+  `hackathon`, or `webinar`; everything else defaults to `conference`. `other` is available
+  for curation but is not inferred. Any existing non-empty value, including a manual override,
+  is preserved and does not itself trigger a rewrite. A missing value back-fills during
+  `upsert` and `normalize_file` with return status updated when a file changes, but valid
+  `created`/`updated` stamps stay unchanged unless another source property changed.
 - **`topics` is cumulative, not replaced.** `_merge_topics` keeps the existing list verbatim
   as a prefix and appends only incoming topics not already present (exact, case-sensitive
   match; incoming duplicates append once). Hand-added topics and topics removed or reordered
@@ -280,8 +288,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
 
 - Note count is in the ballpark of `untilDate >= cutoff` rows in the freshly fetched
   `all-cfps.json` (after dedupe) plus confs.tech and manual rows.
-- Every note under `data/` parses as valid YAML frontmatter, and `event_date` is `YYYY-MM-DD`
-  (or `TBA`).
+- Every note under `data/` parses as valid YAML frontmatter, `event_date` is `YYYY-MM-DD`
+  (or `TBA`), and `event_type` is nonempty (inferred or manually curated).
 - `python3 src/normalize-data.py` is idempotent — running it twice leaves the tree unchanged.
 - Counts legitimately move between runs: upstream revises deadlines and adds events daily, so a
   refresh gaining or losing a handful of notes is normal. Diff against the source data at run

@@ -50,6 +50,7 @@ adato-tracker, and any hand-curated rows in `input/*.md`.
 4. Verify before reporting back:
    - every note under `data/` parses as valid YAML frontmatter;
    - `event_date` is a clean `YYYY-MM-DD` (start date only, or `TBA`);
+   - `event_type` is nonempty (inferred or manually curated), and existing overrides survive;
    - per-note edits are preserved: `shortlist`, `submissions`, and the `## Notes` body;
    - the note count is plausible for the sources — it drifts as upstream revises deadlines, so
      report what you actually got, do not force old numbers.
@@ -93,6 +94,10 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   existing values are kept and new source values are appended (exact, case-sensitive match), so
   hand-added topics and topics removed/reordered upstream remain unchanged. Only a genuinely
   new topic or another source-property change rewrites the note; a no-op refresh touches nothing.
+- `event_type` is inferred for new/missing values as `conference`, `meetup`, `summit`, `workshop`,
+  `hackathon`, or `webinar` (default `conference`; `other` is available for manual curation).
+  Existing non-empty values are sticky, including manual overrides. A missing value back-fills
+  during refresh or `normalize-data.py` without advancing a valid `updated` stamp.
 - `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
   first-seen date and is preserved. `updated` advances to the run date whenever a source change
   rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp

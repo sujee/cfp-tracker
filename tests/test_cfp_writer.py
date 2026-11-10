@@ -123,6 +123,93 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertIn("type: cfp", text)
 
 
+class TestEventType(WriterTestCase):
+    """Event types are inferred when unset and sticky once present."""
+
+    def test_inference_uses_controlled_types_and_conference_fallback(self) -> None:
+        cases = {
+            "Global Tech Conference 2027": "conference",
+            "DevOps Days": "conference",
+            "vLLM Toronto Meetup": "meetup",
+            "CNCF Montreal: 2026 Meetups": "meetup",
+            "Kubernetes Meet-up Berlin": "meetup",
+            "Ubuntu Summit": "summit",
+            "OpenEmbedded Workshop 2027": "workshop",
+            "FABCON 2027 - WORKSHOPS": "workshop",
+            "AI Hackathon Europe": "hackathon",
+            "Weekly Webinar": "webinar",
+        }
+        for name, expected in cases.items():
+            with self.subTest(name=name):
+                self.assertEqual(cw.infer_event_type(name), expected)
+        self.assertEqual(
+            cw.EVENT_TYPES,
+            (
+                "conference",
+                "meetup",
+                "summit",
+                "workshop",
+                "hackathon",
+                "webinar",
+                "other",
+            ),
+        )
+
+    def test_new_note_defaults_to_conference(self) -> None:
+        self.write_initial()
+
+        self.assertEqual(self.frontmatter()["event_type"], "conference")
+        self.assertIn(
+            "event_date: 2026-12-19\nevent_type: conference\nlocation: Online",
+            self.path.read_text(encoding="utf-8"),
+        )
+
+    def test_existing_event_type_survives_noop_and_source_update(self) -> None:
+        self.write_initial()
+        self.edit("event_type: conference", "event_type: meetup")
+        edited = self.path.read_bytes()
+
+        # Even a conflicting incoming value is ignored when the note has one.
+        status = cw.upsert(self.data, sample_row(event_type="webinar"))
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), edited)
+
+        status = cw.upsert(
+            self.data,
+            sample_row(location="Barcelona, Spain", event_type="webinar"),
+        )
+        self.assertEqual(status, "updated")
+        self.assertEqual(self.frontmatter()["event_type"], "meetup")
+
+    def test_missing_event_type_backfills_without_advancing_updated(self) -> None:
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
+        self.edit("event_type: conference\n", "")
+
+        status = cw.upsert(self.data, self.row, today="2026-11-09")
+
+        self.assertEqual(status, "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_type"], "conference")
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        before = self.path.read_bytes()
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_normalize_backfills_event_type_without_advancing_updated(self) -> None:
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
+        self.edit("event_type: conference\n", "")
+
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-09"))
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_type"], "conference")
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        after_first = self.path.read_bytes()
+        cw.normalize_file(self.path, today="2026-11-10")
+        self.assertEqual(self.path.read_bytes(), after_first)
+
+
 class TestTopicsPreserved(WriterTestCase):
     """Existing topics accumulate; only unseen incoming topics are appended."""
 
@@ -1142,12 +1229,16 @@ class TestCfpTemplate(unittest.TestCase):
         "created", "updated",
     }
 
+    # ``event_type`` is inferred and back-filled, so older hand templates may
+    # legitimately omit it until the note's next refresh/normalization.
+    OPTIONAL = {"benefits", "languages", "event_type"}
+
     @unittest.skipUnless(TEMPLATE, "templates/cfp-template.md not found")
     def test_template_keys_match_a_generated_note(self) -> None:
         fm, _ = cw._read_frontmatter(self.TEMPLATE)
         keys = set(fm)
         self.assertTrue(self.REQUIRED <= keys, f"missing: {self.REQUIRED - keys}")
-        self.assertTrue(keys <= self.REQUIRED | {"benefits", "languages"}, f"unknown: {keys - self.REQUIRED - {'benefits', 'languages'}}")
+        self.assertTrue(keys <= self.REQUIRED | self.OPTIONAL, f"unknown: {keys - self.REQUIRED - self.OPTIONAL}")
 
 
 if __name__ == "__main__":

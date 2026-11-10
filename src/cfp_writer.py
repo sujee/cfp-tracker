@@ -28,6 +28,33 @@ PRESERVED = {"shortlist", "submissions"}
 NOTES_HEADING = "## Notes"
 NOTES_PLACEHOLDER = "_Add notes here._"
 
+EVENT_TYPES = (
+    "conference",
+    "meetup",
+    "summit",
+    "workshop",
+    "hackathon",
+    "webinar",
+    "other",
+)
+DEFAULT_EVENT_TYPE = "conference"
+_EVENT_TYPE_PATTERNS = (
+    ("meetup", re.compile(r"\bmeet[\s-]?ups?\b", re.IGNORECASE)),
+    ("summit", re.compile(r"\bsummits?\b", re.IGNORECASE)),
+    ("workshop", re.compile(r"\bworkshops?\b", re.IGNORECASE)),
+    ("hackathon", re.compile(r"\bhackathons?\b", re.IGNORECASE)),
+    ("webinar", re.compile(r"\bwebinars?\b", re.IGNORECASE)),
+)
+
+
+def infer_event_type(name: str) -> str:
+    """Infer a controlled event type from *name*, defaulting to conference."""
+    for event_type, pattern in _EVENT_TYPE_PATTERNS:
+        if pattern.search(name or ""):
+            return event_type
+    return DEFAULT_EVENT_TYPE
+
+
 # Frontmatter properties that are regenerated from the upstream row. ``upsert``
 # compares these one by one against the existing note and skips the write when
 # all of them already match, so a user's edits to the body, ``shortlist`` /
@@ -188,6 +215,7 @@ KNOWN_FM_KEYS = {
     "type",
     "name",
     "event_date",
+    "event_type",
     "location",
     "country",
     "cfp_close",
@@ -473,6 +501,7 @@ def _render(
         "type: cfp",
         f"name: {_yaml_str(row.get('name', ''))}",
         f"event_date: {_yaml_str(row.get('event_date', ''))}",
+        f"event_type: {_yaml_str(row.get('event_type', ''))}",
         f"location: {_yaml_str(row.get('location', ''))}",
         f"country: {_yaml_str(row.get('country', ''))}",
         f"cfp_close: {_yaml_str(row.get('cfp_close', ''))}",
@@ -534,6 +563,15 @@ def _write_if_changed(path: Path, text: str) -> str:
     return "updated" if existed else "new"
 
 
+def _event_type_for(fm: dict, row: dict) -> str:
+    """Return a sticky existing event type, or infer one when it is unset."""
+    existing = _as_str(fm.get("event_type")).strip()
+    if existing:
+        return existing
+    supplied = _as_str(row.get("event_type")).strip()
+    return supplied or infer_event_type(_as_str(row.get("name")))
+
+
 def _merge_topics(existing: list[str], incoming) -> list[str]:
     """Keep existing topics verbatim and append newly seen incoming topics.
 
@@ -590,7 +628,9 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     ``created``/``updated`` stamps are valid ISO dates. Topics are cumulative:
     existing values are preserved and new incoming values are appended, so a
     topic removal/reordering upstream or a hand-added topic does not force a
-    rewrite, while a genuinely new source topic does.
+    rewrite, while a genuinely new source topic does. ``event_type`` is sticky:
+    an existing non-empty value is preserved, and a missing one is inferred from
+    the conference name and back-filled without constituting a source change.
 
     The stamps are writer-owned but deliberately excluded from the source-prop
     compare: a no-op refresh must not touch anything. ``created`` is preserved
@@ -655,12 +695,23 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
         print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
         return "skipped"
 
+    # Event type is curated metadata: preserve a non-empty existing value and
+    # infer it only when absent. Like missing stamps, a missing type back-fills
+    # on the next refresh without advancing a valid ``updated`` stamp.
+    event_type_set = bool(_as_str(fm.get("event_type")).strip())
+    row["event_type"] = _event_type_for(fm, row)
+
     # Topics accumulate across refreshes instead of being replaced by the
     # current source row. Merge before comparing so an unchanged cumulative list
     # remains a no-op and only genuinely new topics trigger a rewrite.
     row["topics"] = _merge_topics(_as_list(fm.get("topics")), row.get("topics"))
     props_match = _source_props_match(fm, row)
-    if props_match and _valid_iso_date(fm.get("created")) and _valid_iso_date(fm.get("updated")):
+    if (
+        props_match
+        and event_type_set
+        and _valid_iso_date(fm.get("created"))
+        and _valid_iso_date(fm.get("updated"))
+    ):
         return "unchanged"
 
     # A note another (higher-priority) source already owns is left as-is. The
@@ -721,10 +772,11 @@ def normalize_file(path: Path, today=None) -> bool:
     """Rewrite one existing note in place to the current frontmatter shape.
 
     Drops any frontmatter ``notes`` (kept only in the body), re-quotes every
-    value safely, and re-renders the body. Missing ``created``/``updated``
-    stamps back-fill with today (or mirror the other stamp when one exists);
-    stamps already present are preserved verbatim (re-emitting the shape is not
-    a data update). Returns False when there is no frontmatter block or the
+    value safely, back-fills a missing ``event_type`` from the name, and
+    re-renders the body. Missing ``created``/``updated`` stamps back-fill with
+    today (or mirror the other stamp when one exists); stamps and existing event
+    types are preserved (re-emitting the shape is not a data update). Returns
+    False when there is no frontmatter block or the
     block is not valid YAML.
     """
     try:
@@ -742,6 +794,7 @@ def normalize_file(path: Path, today=None) -> bool:
     row["topics"] = _as_list(fm.get("topics"))
     row["benefits"] = _as_list(fm.get("benefits"))
     row["languages"] = _as_list(fm.get("languages"))
+    row["event_type"] = _event_type_for(fm, row)
     row["country"] = normalize_country(row.get("country"))
     row["cfp_url"] = strip_utm(row.get("cfp_url"))
     row["event_url"] = strip_utm(row.get("event_url"))

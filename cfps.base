@@ -12,6 +12,8 @@ properties:
     displayName: Country
   event_date:
     displayName: Event date
+  event_type:
+    displayName: Event type
   location:
     displayName: Location
   submissions:
@@ -325,6 +327,29 @@ views:
       - cfp_close
       - shortlist
       - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - submissions
+      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: By event type
+    filters:
+      and:
+        - '!file.path.startsWith("cfps/archived/")'
+    groupBy:
+      property: event_type
+      direction: ASC
+    order:
+      - cfp_close
+      - formula.cfp_title
+      - event_type
       - event_date
       - location
       - topics
