@@ -216,7 +216,7 @@ Every source adapter passes a mapping with these logical fields to the shared wr
 | `location` | string | Yes | Display location; some sources use `—` when unknown. |
 | `country` | string | Yes | Canonicalized by the writer; empty means unknown. |
 | `cfp_close` | string | Yes | Usually `YYYY-MM-DD`; manual input may be free text, `—`, or `Unstated`. |
-| `topics` | list of strings | Yes | Always rendered; defaults to `[]`. |
+| `topics` | list of strings | Yes | Always rendered; defaults to `[]`. On refresh, incoming values merge into the existing list rather than replacing it. |
 | `benefits` | list of strings | Optional | Rendered only when nonempty. cfp.ninja currently supplies it. |
 | `languages` | list of strings | Optional | Rendered only when nonempty. developers.events currently supplies it. |
 | `event_url` | string | Yes | Event website, or empty. UTM parameters are removed. |
@@ -271,11 +271,7 @@ The following scalar properties are source-owned and semantically compared on re
 - `cfp_url`
 - `source`
 
-The following list properties are source-owned and compared as order-sensitive lists:
-
-- `topics`
-- `benefits`
-- `languages`
+`benefits` and `languages` are source-owned and compared as order-sensitive lists. `topics` is also compared order-sensitively, but only after its incoming source values have been merged into the existing list as specified in §6.4. It is cumulative rather than replace-on-refresh.
 
 `type: cfp` is fixed whenever the writer renders a note. It is not part of the source-property comparison.
 
@@ -292,7 +288,27 @@ Additional properties are copied as raw top-level YAML lines plus indented conti
 
 User edits alone do not trigger a source refresh write. When source fields are unchanged and both stamps are valid, the entire file is left untouched.
 
-### 6.4 Defaults, parsing, and legacy migration
+### 6.4 Topic preservation and merging
+
+`topics` is cumulative across refreshes. Before comparing or rendering a note, the writer computes its desired topic list as follows:
+
+1. Read existing topics through the same YAML-to-list normalization used for other list fields.
+2. Keep that existing list unchanged as the prefix, including hand-added topics, source topics that disappeared upstream, existing order, and any existing duplicates.
+3. Process incoming source topics in their supplied order and append each value not already present.
+4. Match topics as exact, case-sensitive strings. Incoming duplicates are appended only once.
+
+The merged list, rather than the raw incoming list, is used for source-property comparison and rendering. For a new note, there is no existing prefix, so the result is the incoming source topics deduplicated in first-seen order.
+
+This produces the following refresh behavior:
+
+- A hand-added topic does not trigger a rewrite and is not removed.
+- A source removing or reordering topics does not remove or reorder the note's topics and does not alone trigger a rewrite.
+- A source contributing no topics leaves existing topics intact.
+- At least one genuinely new incoming topic changes the desired list, so the note is rewritten and `updated` advances to the run date.
+- The next refresh with the same incoming topics is `unchanged`; bytes, mtime, and both stamps remain untouched.
+- When another source property also changes, the same merge rules apply during that rewrite.
+
+### 6.5 Defaults, parsing, and legacy migration
 
 - New notes default to `shortlist: false` and `submissions: []`.
 - `shortlist` values `true`, `yes`, `on`, and `1`, case-insensitively after string conversion, normalize to true; other values normalize to false.
@@ -302,7 +318,7 @@ User edits alone do not trigger a source refresh write. When source fields are u
 - Leading repeated Notes headings and placeholder lines are collapsed when body notes are extracted.
 - An empty body is replaced with `_Add notes here._`.
 
-### 6.5 YAML handling and safety
+### 6.6 YAML handling and safety
 
 Frontmatter must begin with `---` on the first line and end with a `---` delimiter. The writer parses the whole block with `yaml.safe_load` and requires a mapping.
 
@@ -393,8 +409,9 @@ Before path comparison or rendering, the writer:
 1. Canonicalizes `country` with `normalize_country`.
 2. Removes `utm_*` query parameters from `cfp_url`.
 3. Removes `utm_*` query parameters from `event_url`.
+4. After reading existing frontmatter, merges incoming topics into existing topics according to §6.4.
 
-Thus spelling or tracking-parameter-only differences must not force repeated rewrites.
+Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Topic changes trigger a rewrite only when they add a previously unseen topic; other source-owned properties retain their normal replacement semantics.
 
 ### 8.3 No-op invariant
 
@@ -402,7 +419,8 @@ A note is `unchanged` only when:
 
 - Its frontmatter parses.
 - Every source-owned scalar equals the normalized incoming value after YAML type normalization.
-- Every source-owned list equals the incoming list, including item order.
+- `benefits` and `languages` equal their incoming lists, including item order.
+- `topics` equals the cumulative merge of existing and incoming topics, so user additions, upstream removals, and upstream reordering alone do not force an update.
 - Both `created` and `updated` match `^\d{4}-\d{2}-\d{2}$`.
 
 When those conditions hold:
@@ -416,7 +434,7 @@ Quoted versus unquoted scalars and block versus flow lists do not alone trigger 
 
 ### 8.4 Source updates and write avoidance
 
-When a source-owned value differs:
+When a source-owned value differs, including when the cumulative topic merge adds at least one new topic:
 
 - `created` is preserved or backfilled.
 - `updated` becomes the run date.
@@ -581,6 +599,8 @@ For both stored URL fields, `strip_utm`:
 - Does not remove similarly named keys such as `myutm_source` or `utmx`.
 
 ## 11. Source adapter specifications
+
+The adapter mapping tables below describe the incoming normalized source row. The shared writer subsequently applies the cumulative topic merge in §6.4 before comparison and note rendering.
 
 ### 11.1 developers.events
 
@@ -1196,7 +1216,7 @@ Similarly, when URL-based deduplication selects a winner, losing-note user conte
 - Shared-form protection can leave genuine duplicates separate.
 - Name compatibility can theoretically merge distinct events that look compatible.
 - confs.tech deduplicates by name alone, so later editions or revised deadlines with the same normalized name can be discarded.
-- A higher-priority source replaces the whole source-owned note rather than combining the best fields from every source.
+- A higher-priority source replaces the source-owned note fields rather than combining the best fields from every source. Cumulative `topics` are the exception: existing values remain and new values are appended.
 
 ### 17.7 Legacy developers.events options are mostly inert for notes
 

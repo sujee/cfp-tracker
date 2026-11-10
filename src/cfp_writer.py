@@ -43,7 +43,9 @@ SOURCE_SCALAR_FIELDS = (
     "source",
 )
 
-# Source-owned list fields, compared as lists (semantic, order-sensitive).
+# List fields, compared semantically and order-sensitively. ``upsert`` first
+# merges incoming topics into the existing note, so the topics comparison is
+# against that cumulative value rather than the raw source list.
 LIST_FIELDS = ("topics", "benefits", "languages")
 
 # Lower index = higher priority. Several conferences appear in more than one
@@ -532,6 +534,22 @@ def _write_if_changed(path: Path, text: str) -> str:
     return "updated" if existed else "new"
 
 
+def _merge_topics(existing: list[str], incoming) -> list[str]:
+    """Keep existing topics verbatim and append newly seen incoming topics.
+
+    Matching is exact and case-sensitive. Existing order (and any existing
+    duplicates) is preserved; incoming duplicates are appended only once.
+    """
+    merged = list(existing)
+    seen = set(merged)
+    for value in incoming or []:
+        topic = str(value)
+        if topic not in seen:
+            merged.append(topic)
+            seen.add(topic)
+    return merged
+
+
 def _source_props_match(fm: dict, row: dict) -> bool:
     """True when *fm* already carries every source-derived property from *row*.
 
@@ -569,7 +587,10 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
 
     ``"unchanged"`` means the note is current — every source-derived property
     already matches the file (see :func:`_source_props_match`) and the
-    ``created``/``updated`` stamps are valid ISO dates.
+    ``created``/``updated`` stamps are valid ISO dates. Topics are cumulative:
+    existing values are preserved and new incoming values are appended, so a
+    topic removal/reordering upstream or a hand-added topic does not force a
+    rewrite, while a genuinely new source topic does.
 
     The stamps are writer-owned but deliberately excluded from the source-prop
     compare: a no-op refresh must not touch anything. ``created`` is preserved
@@ -633,6 +654,11 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     except FrontmatterError:
         print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
         return "skipped"
+
+    # Topics accumulate across refreshes instead of being replaced by the
+    # current source row. Merge before comparing so an unchanged cumulative list
+    # remains a no-op and only genuinely new topics trigger a rewrite.
+    row["topics"] = _merge_topics(_as_list(fm.get("topics")), row.get("topics"))
     props_match = _source_props_match(fm, row)
     if props_match and _valid_iso_date(fm.get("created")) and _valid_iso_date(fm.get("updated")):
         return "unchanged"

@@ -156,11 +156,17 @@ currently change nothing the base reads. Kept for reference / if the report retu
 ## Pitfalls
 
 - **The source-owned fields are regenerated; everything else survives a refresh.**
-  `name`, `event_date`, `location`, `country`, `cfp_close`, `topics`, `benefits`, `languages`,
-  `event_url`,
-  `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
+  `name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
+  `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
   `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
+- **`topics` is cumulative, not replaced.** `_merge_topics` keeps the existing list verbatim
+  as a prefix and appends only incoming topics not already present (exact, case-sensitive
+  match; incoming duplicates append once). Hand-added topics and topics removed or reordered
+  upstream therefore survive without forcing a rewrite. A genuinely new topic does rewrite
+  the note and advances `updated`; the next identical refresh is unchanged. The merged list
+  is built before `_source_props_match`, so this no-op behavior falls out of the normal
+  semantic list comparison.
 - **`created` and `updated` are pipeline stamps, not source fields.** `created` is written
   when the note first appears and preserved afterwards; `updated` is advanced to the run date
   only when a source change rewrites the note (a no-op refresh changes neither). They are

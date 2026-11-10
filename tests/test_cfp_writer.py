@@ -8,6 +8,7 @@ Run from the project folder:
 These cover the contract that a refresh only rewrites a note when the
 source-derived frontmatter properties actually change, and that user-owned
 content (body notes, ``shortlist``/``submissions``, extra frontmatter) survives.
+Topics are cumulative: existing values survive and new source values append.
 """
 from __future__ import annotations
 
@@ -103,11 +104,14 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertEqual(cw.upsert(self.data, self.row), "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
 
-    def test_topics_difference_is_updated(self) -> None:
+    def test_new_source_topics_are_merged_with_existing_topics(self) -> None:
         self.write_initial()
         status = cw.upsert(self.data, sample_row(topics=["microsoft", "cloud", "ai"]))
         self.assertEqual(status, "updated")
-        self.assertEqual(self.frontmatter()["topics"], ["microsoft", "cloud", "ai"])
+        self.assertEqual(
+            self.frontmatter()["topics"],
+            ["microsoft", "cloud", "automation", "ai"],
+        )
 
     def test_existing_file_without_frontmatter_is_updated(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +121,101 @@ class TestNewAndUnchanged(WriterTestCase):
         text = self.path.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("---\n"))
         self.assertIn("type: cfp", text)
+
+
+class TestTopicsPreserved(WriterTestCase):
+    """Existing topics accumulate; only unseen incoming topics are appended."""
+
+    def test_user_added_topic_does_not_trigger_a_rewrite(self) -> None:
+        self.write_initial()
+        self.edit(
+            "topics: [microsoft, cloud, automation]",
+            "topics: [microsoft, cloud, automation, custom]",
+        )
+        edited = self.path.read_bytes()
+
+        status = cw.upsert(self.data, self.row)
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), edited)
+
+    def test_removed_source_topics_are_preserved_without_a_rewrite(self) -> None:
+        self.write_initial()
+        before = self.path.read_bytes()
+
+        status = cw.upsert(self.data, sample_row(topics=["microsoft"]))
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(
+            self.frontmatter()["topics"], ["microsoft", "cloud", "automation"]
+        )
+
+    def test_source_topic_reordering_does_not_rewrite_or_reorder(self) -> None:
+        self.write_initial()
+        before = self.path.read_bytes()
+
+        status = cw.upsert(
+            self.data,
+            sample_row(topics=["automation", "cloud", "microsoft"]),
+        )
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(
+            self.frontmatter()["topics"], ["microsoft", "cloud", "automation"]
+        )
+
+    def test_existing_topics_survive_another_source_update(self) -> None:
+        self.write_initial()
+        self.edit(
+            "topics: [microsoft, cloud, automation]",
+            "topics: [custom, microsoft]",
+        )
+
+        status = cw.upsert(
+            self.data,
+            sample_row(
+                location="Barcelona, Spain",
+                topics=["microsoft", "cloud", "ai"],
+            ),
+        )
+
+        self.assertEqual(status, "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Barcelona, Spain")
+        self.assertEqual(fm["topics"], ["custom", "microsoft", "cloud", "ai"])
+
+    def test_new_topic_update_is_a_noop_on_the_next_refresh(self) -> None:
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
+        incoming = sample_row(
+            topics=["microsoft", "cloud", "automation", "ai"]
+        )
+        self.assertEqual(cw.upsert(self.data, incoming, today="2026-11-09"), "updated")
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        before = self.path.read_bytes()
+
+        status = cw.upsert(self.data, incoming, today="2026-11-10")
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+
+    def test_duplicate_new_incoming_topics_are_appended_once(self) -> None:
+        self.write_initial()
+
+        status = cw.upsert(
+            self.data,
+            sample_row(
+                topics=["microsoft", "cloud", "automation", "ai", "ai"]
+            ),
+        )
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(
+            self.frontmatter()["topics"],
+            ["microsoft", "cloud", "automation", "ai"],
+        )
 
 
 class TestCreatedUpdated(WriterTestCase):
@@ -349,9 +448,9 @@ class TestUserContentPreserved(WriterTestCase):
 class TestUserTags(WriterTestCase):
     """A hand-added ``tags`` property is user metadata: it must survive a refresh.
 
-    ``topics`` is source-owned and gets regenerated (see ``TestNewAndUnchanged``),
-    so ``tags`` is the key to reach for when you want personal tags that stick.
-    It is not in :data:`cfp_writer.KNOWN_FM_KEYS`, so it is preserved verbatim.
+    ``topics`` is cumulative and accepts new source values (see
+    ``TestTopicsPreserved``); ``tags`` remains separate personal metadata. It is
+    not in :data:`cfp_writer.KNOWN_FM_KEYS`, so it is preserved verbatim.
     """
 
     def test_tags_is_not_a_writer_owned_key(self) -> None:

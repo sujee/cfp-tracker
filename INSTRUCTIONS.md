@@ -87,10 +87,12 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
 ## Rules
 
 - Notes are generated. Do not hand-edit the source-owned fields (`name`, `event_date`,
-  `location`, `country`, `cfp_close`, `topics`, `benefits`, `languages`, `event_url`, `cfp_url`,
+  `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
   `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`,
-  the `## Notes` body, and any extra frontmatter property you add. A note is only rewritten when
-  one of its source-owned properties changes, so a no-op refresh touches nothing.
+  the `## Notes` body, and any extra frontmatter property you add. `topics` is cumulative:
+  existing values are kept and new source values are appended (exact, case-sensitive match), so
+  hand-added topics and topics removed/reordered upstream remain unchanged. Only a genuinely
+  new topic or another source-property change rewrites the note; a no-op refresh touches nothing.
 - `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
   first-seen date and is preserved. `updated` advances to the run date whenever a source change
   rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp

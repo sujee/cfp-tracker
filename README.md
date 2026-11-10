@@ -25,7 +25,7 @@ No uv? `pip install -r requirements.txt`, then `python3 src/process-all.py`. (`p
 
 Each run prints a line per source plus a summary, e.g. `developers.events: found 574 (new 0, updated 5, unchanged 569)`.
 
-- Notes are rewritten only when their source data changed. `shortlist`, `submissions`, the `## Notes` body, and any extra frontmatter fields are preserved. Each note also carries `created` (first-seen date) and `updated` (last source-driven change) pipeline stamps.
+- Notes are rewritten only when their source data changed. Existing `topics` are preserved and new source topics are appended without duplicating existing values. `shortlist`, `submissions`, the `## Notes` body, and any extra frontmatter fields are preserved. Each note also carries `created` (first-seen date) and `updated` (last source-driven change) pipeline stamps.
 - Notes that no source carries any more are moved to `archived/` (`--no-archive` skips this).
 
 **Dry run** (writes nothing to `data/`): `uv run python src/process-all.py --out /tmp/scratch`
