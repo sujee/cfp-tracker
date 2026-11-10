@@ -168,13 +168,14 @@ currently change nothing the base reads. Kept for reference / if the report retu
   is preserved and does not itself trigger a rewrite. A missing value back-fills during
   `upsert` and `normalize_file` with return status updated when a file changes, but valid
   `created`/`updated` stamps stay unchanged unless another source property changed.
-- **`topics` is cumulative, not replaced.** `_merge_topics` keeps the existing list verbatim
-  as a prefix and appends only incoming topics not already present (exact, case-sensitive
-  match; incoming duplicates append once). Hand-added topics and topics removed or reordered
-  upstream therefore survive without forcing a rewrite. A genuinely new topic does rewrite
-  the note and advances `updated`; the next identical refresh is unchanged. The merged list
-  is built before `_source_props_match`, so this no-op behavior falls out of the normal
-  semantic list comparison.
+- **`topics` and `languages` are cumulative, not replaced.** `_merge_list` keeps the existing list verbatim
+  as a prefix and appends only incoming values not already present (exact, case-sensitive
+  match; incoming duplicates append once). Hand-added values and source values removed or
+  reordered upstream therefore survive without forcing a rewrite. A genuinely new value
+  does rewrite the note and advances `updated`; the next identical refresh is unchanged.
+  The merged list is built before `_source_props_match`, so this no-op behavior falls out
+  of the normal semantic list comparison. The one exception is `benefits`, which is
+  replaced on update.
 - **`created` and `updated` are pipeline stamps, not source fields.** `created` is written
   when the note first appears and preserved afterwards; `updated` is advanced to the run date
   only when a source change rewrites the note (a no-op refresh changes neither). They are

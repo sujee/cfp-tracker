@@ -273,7 +273,7 @@ The following scalar properties are source-owned and semantically compared on re
 - `cfp_url`
 - `source`
 
-`benefits` and `languages` are source-owned and compared as order-sensitive lists. `topics` is also compared order-sensitively, but only after its incoming source values have been merged into the existing list as specified in §6.4. It is cumulative rather than replace-on-refresh.
+`benefits` is source-owned and compared as an order-sensitive list, replaced on every rewrite. `topics` and `languages` are source-owned and order-sensitively compared too, but only after their incoming source values have been merged into the existing lists as specified in §6.4. They are cumulative rather than replace-on-refresh.
 
 `event_type` is writer-managed sticky metadata, not a source-owned scalar: it is inferred when unset and preserved thereafter as specified in §6.7. It does not participate in `_source_props_match`.
 
@@ -292,25 +292,27 @@ Additional properties are copied as raw top-level YAML lines plus indented conti
 
 User edits alone do not trigger a source refresh write. When source fields are unchanged and both stamps are valid, the entire file is left untouched.
 
-### 6.4 Topic preservation and merging
+### 6.4 List merging: topics and languages
 
-`topics` is cumulative across refreshes. Before comparing or rendering a note, the writer computes its desired topic list as follows:
+`topics` and `languages` are cumulative across refreshes. Before comparing or rendering a note, the writer computes each desired list as follows:
 
-1. Read existing topics through the same YAML-to-list normalization used for other list fields.
-2. Keep that existing list unchanged as the prefix, including hand-added topics, source topics that disappeared upstream, existing order, and any existing duplicates.
-3. Process incoming source topics in their supplied order and append each value not already present.
-4. Match topics as exact, case-sensitive strings. Incoming duplicates are appended only once.
+1. Read the existing list through the same YAML-to-list normalization used for other list fields.
+2. Keep that existing list unchanged as the prefix, including hand-added values, source values that disappeared upstream, existing order, and any existing duplicates.
+3. Process incoming source values in their supplied order and append each value not already present.
+4. Match values as exact, case-sensitive strings. Incoming duplicates are appended only once.
 
-The merged list, rather than the raw incoming list, is used for source-property comparison and rendering. For a new note, there is no existing prefix, so the result is the incoming source topics deduplicated in first-seen order.
+The merged list, rather than the raw incoming list, is used for source-property comparison and rendering. For a new note, there is no existing prefix, so the result is the incoming source values deduplicated in first-seen order.
 
 This produces the following refresh behavior:
 
-- A hand-added topic does not trigger a rewrite and is not removed.
-- A source removing or reordering topics does not remove or reorder the note's topics and does not alone trigger a rewrite.
-- A source contributing no topics leaves existing topics intact.
-- At least one genuinely new incoming topic changes the desired list, so the note is rewritten and `updated` advances to the run date.
-- The next refresh with the same incoming topics is `unchanged`; bytes, mtime, and both stamps remain untouched.
+- A hand-added topic or language does not trigger a rewrite and is not removed.
+- A source removing or reordering topics or languages does not remove or reorder the note's values and does not alone trigger a rewrite.
+- A source contributing no topics or languages leaves the existing lists intact.
+- At least one genuinely new incoming value changes the desired list, so the note is rewritten and `updated` advances to the run date.
+- The next refresh with the same incoming values is `unchanged`; bytes, mtime, and both stamps remain untouched.
 - When another source property also changes, the same merge rules apply during that rewrite.
+
+`benefits` is the exception among list fields: it is replaced outright on every rewrite and follows the plain §6.2 comparison.
 
 ### 6.5 Defaults, parsing, and legacy migration
 
@@ -444,9 +446,9 @@ Before path comparison or rendering, the writer:
 2. Removes `utm_*` query parameters from `cfp_url`.
 3. Removes `utm_*` query parameters from `event_url`.
 4. After reading existing frontmatter, preserves a nonempty `event_type` or infers/backfills a missing one according to §6.7.
-5. Merges incoming topics into existing topics according to §6.4.
+5. Merges incoming topics and languages into the existing lists according to §6.4.
 
-Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Event-type edits alone do not force a rewrite. Topic changes trigger a rewrite only when they add a previously unseen topic; other source-owned properties retain their normal replacement semantics.
+Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Event-type edits alone do not force a rewrite. A genuinely new topic or language triggers a rewrite; source values removed or reordered upstream and user additions do not. Other source-owned properties retain their normal replacement semantics.
 
 ### 8.3 No-op invariant
 
@@ -455,7 +457,8 @@ A note is `unchanged` only when:
 - Its frontmatter parses.
 - `event_type` is nonempty; its actual value need not equal a new inference because existing values are sticky. A missing value backfills instead of taking the no-op path.
 - Every source-owned scalar equals the normalized incoming value after YAML type normalization.
-- `benefits` and `languages` equal their incoming lists, including item order.
+- `benefits` equals its incoming list, including item order.
+- `languages` equals the cumulative merge of existing and incoming languages, so user additions, upstream removals, and upstream reordering alone do not force an update.
 - `topics` equals the cumulative merge of existing and incoming topics, so user additions, upstream removals, and upstream reordering alone do not force an update.
 - Both `created` and `updated` match `^\d{4}-\d{2}-\d{2}$`.
 
@@ -637,7 +640,7 @@ For both stored URL fields, `strip_utm`:
 
 ## 11. Source adapter specifications
 
-The adapter mapping tables below describe the incoming normalized source row. The shared writer subsequently applies the cumulative topic merge in §6.4 before comparison and note rendering.
+The adapter mapping tables below describe the incoming normalized source row. The shared writer subsequently applies the cumulative topic/language merge in §6.4 before comparison and note rendering.
 
 ### 11.1 developers.events
 

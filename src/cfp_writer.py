@@ -71,8 +71,10 @@ SOURCE_SCALAR_FIELDS = (
 )
 
 # List fields, compared semantically and order-sensitively. ``upsert`` first
-# merges incoming topics into the existing note, so the topics comparison is
-# against that cumulative value rather than the raw source list.
+# merges incoming topics and languages into the existing note (cumulative, see
+# ``_merge_list``), so those two comparisons are against the cumulative values
+# rather than the raw source lists. ``benefits`` is the exception: it is
+# replaced on update.
 LIST_FIELDS = ("topics", "benefits", "languages")
 
 # Lower index = higher priority. Several conferences appear in more than one
@@ -572,9 +574,10 @@ def _event_type_for(fm: dict, row: dict) -> str:
     return supplied or infer_event_type(_as_str(row.get("name")))
 
 
-def _merge_topics(existing: list[str], incoming) -> list[str]:
-    """Keep existing topics verbatim and append newly seen incoming topics.
+def _merge_list(existing: list[str], incoming) -> list[str]:
+    """Keep the existing list verbatim and append newly seen incoming values.
 
+    Used for the cumulative list fields (``topics`` and ``languages``).
     Matching is exact and case-sensitive. Existing order (and any existing
     duplicates) is preserved; incoming duplicates are appended only once.
     """
@@ -625,12 +628,13 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
 
     ``"unchanged"`` means the note is current — every source-derived property
     already matches the file (see :func:`_source_props_match`) and the
-    ``created``/``updated`` stamps are valid ISO dates. Topics are cumulative:
-    existing values are preserved and new incoming values are appended, so a
-    topic removal/reordering upstream or a hand-added topic does not force a
-    rewrite, while a genuinely new source topic does. ``event_type`` is sticky:
-    an existing non-empty value is preserved, and a missing one is inferred from
-    the conference name and back-filled without constituting a source change.
+    ``created``/``updated`` stamps are valid ISO dates. Topics and languages
+    are cumulative: existing values are preserved and new incoming values are
+    appended, so a hand-added value or one the source removed/reordered
+    upstream does not force a rewrite, while a genuinely new one does.
+    ``event_type`` is sticky: an existing non-empty value is preserved, and a
+    missing one is inferred from the conference name and back-filled without
+    constituting a source change.
 
     The stamps are writer-owned but deliberately excluded from the source-prop
     compare: a no-op refresh must not touch anything. ``created`` is preserved
@@ -701,10 +705,12 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     event_type_set = bool(_as_str(fm.get("event_type")).strip())
     row["event_type"] = _event_type_for(fm, row)
 
-    # Topics accumulate across refreshes instead of being replaced by the
-    # current source row. Merge before comparing so an unchanged cumulative list
-    # remains a no-op and only genuinely new topics trigger a rewrite.
-    row["topics"] = _merge_topics(_as_list(fm.get("topics")), row.get("topics"))
+    # Topics and languages accumulate across refreshes instead of being
+    # replaced by the current source row. Merge before comparing so an
+    # unchanged cumulative list remains a no-op and only genuinely new
+    # values trigger a rewrite. ``benefits`` keeps its replace semantics.
+    row["topics"] = _merge_list(_as_list(fm.get("topics")), row.get("topics"))
+    row["languages"] = _merge_list(_as_list(fm.get("languages")), row.get("languages"))
     props_match = _source_props_match(fm, row)
     if (
         props_match

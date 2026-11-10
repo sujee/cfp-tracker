@@ -8,7 +8,8 @@ Run from the project folder:
 These cover the contract that a refresh only rewrites a note when the
 source-derived frontmatter properties actually change, and that user-owned
 content (body notes, ``shortlist``/``submissions``, extra frontmatter) survives.
-Topics are cumulative: existing values survive and new source values append.
+Topics and languages are cumulative: existing values survive and new source
+values append.
 """
 from __future__ import annotations
 
@@ -912,7 +913,13 @@ class TestBenefits(WriterTestCase):
 
 
 class TestLanguages(WriterTestCase):
-    """``languages`` is a writer-owned list, emitted only when the source has any."""
+    """``languages`` is a writer-owned list, emitted only when nonempty.
+
+    Like ``topics``, it is merged cumulatively on refresh: existing values are
+    preserved as a prefix and new incoming ones are appended, so a hand-added
+    language or one the source dropped/reordered upstream does not trigger a
+    rewrite. ``benefits`` is the list field that keeps replace semantics.
+    """
 
     def test_no_languages_line_when_source_has_none(self) -> None:
         text = self.write_initial()
@@ -927,10 +934,105 @@ class TestLanguages(WriterTestCase):
         self.assertEqual(cw.upsert(self.data, sample_row(languages=["english", "french"])), "updated")
         self.assertIn("languages: [english, french]", self.path.read_text(encoding="utf-8"))
 
-    def test_dropping_languages_removes_the_line(self) -> None:
+    def test_user_added_language_does_not_trigger_a_rewrite(self) -> None:
         self.assertEqual(cw.upsert(self.data, sample_row(languages=["english"])), "new")
-        self.assertEqual(cw.upsert(self.data, sample_row()), "updated")
-        self.assertNotIn("languages:", self.path.read_text(encoding="utf-8"))
+        self.edit(
+            "languages: [english]",
+            "languages: [english, spanish]",
+        )
+        edited = self.path.read_bytes()
+
+        status = cw.upsert(self.data, sample_row(languages=["english"]))
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), edited)
+
+    def test_removed_source_language_is_preserved_without_a_rewrite(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["english", "spanish"])), "new"
+        )
+        before = self.path.read_bytes()
+
+        status = cw.upsert(self.data, sample_row(languages=["english"]))
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(
+            self.frontmatter()["languages"], ["english", "spanish"]
+        )
+
+    def test_source_language_reordering_does_not_rewrite_or_reorder(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["english", "spanish"])), "new"
+        )
+        before = self.path.read_bytes()
+
+        status = cw.upsert(
+            self.data,
+            sample_row(languages=["spanish", "english"]),
+        )
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(
+            self.frontmatter()["languages"], ["english", "spanish"]
+        )
+
+    def test_existing_languages_survive_another_source_update(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["english", "spanish"])), "new"
+        )
+        self.edit(
+            "languages: [english, spanish]",
+            "languages: [german, english]",
+        )
+
+        status = cw.upsert(
+            self.data,
+            sample_row(
+                location="Barcelona, Spain",
+                languages=["english", "french"],
+            ),
+        )
+
+        self.assertEqual(status, "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Barcelona, Spain")
+        self.assertEqual(fm["languages"], ["german", "english", "french"])
+
+    def test_new_language_update_is_a_noop_on_the_next_refresh(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["english", "spanish"]), today="2026-11-06"),
+            "new",
+        )
+        incoming = sample_row(languages=["english", "spanish", "french"])
+        self.assertEqual(cw.upsert(self.data, incoming, today="2026-11-09"), "updated")
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        before = self.path.read_bytes()
+
+        status = cw.upsert(self.data, incoming, today="2026-11-10")
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+
+    def test_duplicate_new_incoming_languages_are_appended_once(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["english", "spanish"])), "new"
+        )
+
+        status = cw.upsert(
+            self.data,
+            sample_row(
+                languages=["english", "spanish", "french", "french"]
+            ),
+        )
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(
+            self.frontmatter()["languages"],
+            ["english", "spanish", "french"],
+        )
 
     def test_languages_are_preserved_by_normalize(self) -> None:
         cw.upsert(self.data, sample_row(languages=["german"]))
