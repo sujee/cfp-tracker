@@ -1,13 +1,13 @@
 # CFP Tracker
 #cfp #conference
 
-Conference CFPs (Call For Papers) worth submitting talks to, refreshed from public CFP feeds into one note per conference.
-
-The code lives here. `data/` and `archived/` are symlinks to the Obsidian vault's `cfps/` folder, so a refresh updates the vault notes in place and no code lives in the vault.
+A Conference CFPs (Call For Papers) tracker - it pulls data from public sources into Obisidian Vault.
 
 ## Quick start
 
 Requires Python ≥ 3.10, network access, and PyYAML.
+
+**setup - one time**
 
 ```bash
 git clone git@github.com:sujee/cfp-tracker.git
@@ -16,24 +16,22 @@ cd cfp-tracker
 # one time: link the note folders to your vault (create them first if missing)
 ln -s /path/to/your-vault/cfps/data data
 ln -s /path/to/your-vault/cfps/archived archived
-
-uv sync                                 # create .venv + install PyYAML
-uv run python src/process-all.py        # refresh the notes
 ```
 
-No uv? `pip install -r requirements.txt`, then `python3 src/process-all.py`. (`pycountry` is optional, for country-flag emoji.)
+**Configuration**
 
-Each run prints a line per source plus a summary, e.g. `developers.events: found 574 (new 0, updated 5, unchanged 569)`.
+Inspect [src/config.py](src/config.py)  and set topics you are interested in.
 
-- Notes are rewritten only when their source data changed. Existing `topics` are preserved and new source topics are appended without duplicating existing values. `shortlist`, `submissions`, the `## Notes` body, and any extra frontmatter fields are preserved. Each note also carries `created` (first-seen date) and `updated` (last source-driven change) pipeline stamps.
-- `event_type` is inferred as `conference`, `meetup`, `summit`, `workshop`, `hackathon`, or `webinar` when missing (default `conference`; `other` is available for manual curation). Existing values and manual overrides are preserved. A refresh or `normalize-data.py` back-fills missing values.
-- Notes that no source carries any more are moved to `archived/` (`--no-archive` skips this).
+```python
+TOPICS = {
+    "ai",
+    "devrel"
+    # and so on
+```
 
-**Dry run** (writes nothing to `data/`): `uv run python src/process-all.py --out /tmp/scratch`
+Optionally, you can set `IGNORE_TOPICS` as well
 
-**Tests:** `uv run python -m unittest discover -s tests`
-
-## Using an agent
+**Run it: Option 1 (easy) -  with agent**
 
 Open an agent in this folder and say 
 
@@ -41,15 +39,73 @@ Open an agent in this folder and say
 update cfps
 ```
 
+That's it! :-) 
+
 It runs the pipeline and reports the new CFP count per source. The full procedure is in [`INSTRUCTIONS.md`](INSTRUCTIONS.md).
 
-## Browse the CFPs in Obsidian (cfps.base)
 
-Copy [cfps.base](cfps.base) anywhere in your Obsidian vault and open it. Use pre-defined views to browse CFPs.
+**Run it: Option 2 -  Manually with UV (preferred)**
 
-> **Vault path:** the views exclude archived notes by the path `cfps/archived/`. If your vault keeps the notes elsewhere, find-and-replace that path in `cfps.base`, or the live views will show archived notes and **Archived** will be empty.
+```bash
+# dry run (nothing is updated)
+uv run python src/process-all.py --out /tmp/scratch
 
-The views:
+# real run
+uv run python src/process-all.py        # refresh the notes
+```
+
+**No uv?**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # activate it (zsh/bash)
+pip install -r requirements.txt 
+python3 src/process-all.py
+```
+
+Each run prints a line per source plus a summary, e.g.
+
+```
+=====================================================
+ CFP refresh summary
+=====================================================
+source               found    new  updated  unchanged
+-----------------------------------------------------
+developers.events      592      0        0        592
+cfp.ninja               34      0        0         34
+confs.tech              13      0        0         13
+adato-tracker          249      0        0        249
+manual input             5      0        0          5
+-----------------------------------------------------
+Total                  893      0        0        893
+```
+
+**Tests:** 
+
+```bash
+uv run python -m unittest discover -s tests
+```
+
+## Browse the CFPs in Obsidian 
+
+**Vault paths**
+
+- `cfps/data` : where imported CFPs are 
+- `cfps/archived` : deleted / archived CFPs
+
+Copy these files into your Obsidian Vault, in the folder that contains `cfps/` (usually the
+vault root), so the paths resolve exactly as `cfps/data` and `cfps/archived`.
+
+- [cfps.base](cfps.base): Has views defined to browse CFPs
+- [cfps-dashboard.md](cfps-dashboard.md): CFP stats (Dataview tables: by country, topic, month)
+
+> **Vault path:** `cfps.base` excludes archived notes by the path `cfps/archived/`, and the
+> dashboard reads `cfps/data`. If your vault keeps the notes elsewhere, find-and-replace those
+> two strings — otherwise archived notes reappear in the live views and **Archived** is empty.
+
+
+
+A few views defined in `cfps.base` (you can customize them!)
 
 | View | What it shows |
 |---|---|
@@ -61,15 +117,12 @@ The views:
 | **Submitted** | Notes with at least one wiki link under `submissions`. |
 | **Conf in USA / Conf outside USA / Online** | Geography filters. |
 | **Local events** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
-| **By event type** | Live notes grouped by `event_type`, so conferences, meetups, summits, workshops, and other types can be browsed independently. |
-| **Archived** | The notes in `archived/` (moved there by a refresh once no source carries them), latest deadline first. Every other view excludes them. |
 
+## Sample Workflow
 
-## Dashboard counts (cfps-dashboard.md)
-
-[cfps-dashboard.md](cfps-dashboard.md) counts the live CFPs in three small dataview tables: events by country, by topic, and by month. Copy it into your vault and open it. It reads the same notes as the base, so archived CFPs are excluded and the counts update after each refresh. (Same caveat as the base: if your vault keeps the notes elsewhere, find-and-replace `cfps/data` in the dataview blocks.)
-
-Events with several topics count once in each topic. Months come from the note's `event_date`.
+- Do a run to update CFPS.  See [quick start](#Quick-start)
+- Check `cfps.base` in Obsidian
+- Browse CFPs and shortlist the the one's you are interested in - by selecting the **short listed** flag
 
 ## Options
 
@@ -117,9 +170,6 @@ A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `Y
 | **`input/*.md`** | Hand-curated rows, merged by `src/process-manual-input.py`. |
 
 If two sources carry the same conference, the higher-priority one owns the note: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`.
-
-**Not yet scripted:** cfp.fru.dev (cross-check), events.fru.dev, dev.events, pretalx.com, Sessionize (a link target only).
-**Dead, do not add:** papercall.io (shut down) and CFP Land.
 
 Details and HTTP-verified status: [`cfp-sources.md`](cfp-sources.md).
 
