@@ -16,10 +16,13 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "confs-tech"
 sys.path.insert(0, str(ROOT / "src"))
+
+import config
 
 
 def load_module(path: Path, name: str):
@@ -52,14 +55,20 @@ class TestParseDate(unittest.TestCase):
 
 class TestCollectRows(unittest.TestCase):
     def setUp(self) -> None:
+        self.requested_topics = []
+
         # Patch the network fetch to serve the fixture for any topic file.
         def fake_fetch(url, cache_path=None, cache_key=None):
             if url.rstrip("/").endswith(("2026", "2027", "2028")):
-                return [{"name": "general.json"}, {"name": "python.json"}]
+                return [
+                    {"name": "general.json"},
+                    {"name": "python.json"},
+                    {"name": "javascript.json"},
+                ]
+            if url.endswith(".json"):
+                self.requested_topics.append(url.rsplit("/", 1)[-1].removesuffix(".json"))
             if url.endswith("general.json"):
                 return GENERAL
-            if url.endswith("python.json"):
-                return []
             return []
 
         self._orig = pct._fetch_json
@@ -87,6 +96,16 @@ class TestCollectRows(unittest.TestCase):
         # The fixture year-listing returns the same data for 2026 and 2027.
         rows = pct.collect_rows(CUTOFF, TODAY, None)
         self.assertEqual(len([r for r in rows if r["name"] == "PyCascades"]), 1)
+
+    def test_allowlist_selects_topics_and_always_keeps_general(self) -> None:
+        with mock.patch.object(config, "CONFS_TECH_TOPICS", {"python"}):
+            pct.collect_rows(CUTOFF, TODAY, None)
+        self.assertEqual(self.requested_topics, ["general", "python"] * 2)
+
+    def test_empty_allowlist_selects_all_topics(self) -> None:
+        with mock.patch.object(config, "CONFS_TECH_TOPICS", set()):
+            pct.collect_rows(CUTOFF, TODAY, None)
+        self.assertEqual(self.requested_topics, ["general", "python", "javascript"] * 2)
 
 
 if __name__ == "__main__":

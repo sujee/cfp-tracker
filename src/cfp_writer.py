@@ -24,7 +24,6 @@ except ImportError:  # pragma: no cover - when src/ is not already on sys.path
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from country import normalize_country
 
-PRESERVED = {"shortlist", "submissions"}
 NOTES_HEADING = "## Notes"
 NOTES_PLACEHOLDER = "_Add notes here._"
 
@@ -290,12 +289,11 @@ def _is_plain_safe(s: str, flow: bool = False) -> bool:
     return True
 
 
-# ISO dates/datetimes are deliberately left unquoted: PyYAML reads them as
+# ISO dates are deliberately left unquoted: PyYAML reads them as
 # ``datetime.date`` and Obsidian maps the unquoted form to its date property
 # type, which ``event_date``/``cfp_close``/``created``/``updated`` rely on.
 # ``_as_str`` turns them back into ``YYYY-MM-DD`` on read, so the round-trip is
 # lossless.
-_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ].*)?")
 
 
 def _yaml_reads_as_non_string(s: str) -> bool:
@@ -424,7 +422,7 @@ def _extract_body_notes(body: str) -> str:
         if stripped == text:
             break
         text = stripped
-    return "" if text == NOTES_PLACEHOLDER else text
+    return text
 
 
 def parse_start_date(raw: str) -> str:
@@ -844,8 +842,7 @@ def normalize_file(path: Path, today=None) -> bool:
     if not fm:
         return False
     text = path.read_text(encoding="utf-8")
-    types = ("name", "event_date", "location", "country", "cfp_close", "event_url", "cfp_url", "source")
-    row = {k: _as_str(fm.get(k)) for k in types}
+    row = {k: _as_str(fm.get(k)) for k in SOURCE_SCALAR_FIELDS}
     if not row["event_date"] and "conf_date" in fm:  # legacy key rename
         row["event_date"] = _as_str(fm.get("conf_date"))
     row["topics"] = _as_list(fm.get("topics"))

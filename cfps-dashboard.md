@@ -16,6 +16,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !dismissed
   AND country
 GROUP BY country
 SORT length(rows) DESC
@@ -34,6 +35,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !dismissed
   AND topics
 FLATTEN topics AS topic
 GROUP BY topic
@@ -50,6 +52,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !dismissed
   AND event_date
 GROUP BY dateformat(event_date, "yyyy-MM") AS month
 SORT month DESC

@@ -51,10 +51,13 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         import config as _cfg
-        _TOPICS = getattr(_cfg, "TOPICS_NORMALIZED", set())
+        _CONFS_TECH_TOPICS = {
+            t.lower().replace("_", "-")
+            for t in getattr(_cfg, "CONFS_TECH_TOPICS", set())
+        }
         _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
     except Exception:
-        _TOPICS = set()
+        _CONFS_TECH_TOPICS = set()
         _IGNORE = []
 
     for year in (today.year, today.year + 1):
@@ -68,7 +71,7 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
                 continue
             topic = item["name"].replace(".json", "")
             _DISCOVERED.add(topic)
-            if _TOPICS and topic not in ("general",) and topic.lower().replace("_", "-") not in _TOPICS:
+            if _CONFS_TECH_TOPICS and topic != "general" and topic.lower().replace("_", "-") not in _CONFS_TECH_TOPICS:
                 continue
             try:
                 data = _fetch_json(f"{RAW_BASE}/{year}/{item['name']}", cache_path, f"confs-tech-{year}-{item['name']}")
@@ -98,7 +101,6 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
                         "location": loc,
                         "cfp_close": cfp_end.isoformat(),
                         "event_date": event_date,
-                        "topics": "",
                         "event_url": ev.get("url") or "",
                         "cfp_url": ev.get("cfpUrl") or "",
                     }

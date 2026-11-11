@@ -1,58 +1,22 @@
 """Shared configuration for the CFP pipeline."""
 
-# Topics of interest. Variations/aliases are included so matching is loose.
-TOPICS = {
-    "agentic",
-    "agentic-ai",
-    "ai",
-    "ai-agent",
-    "ai-agents",
-    "ai-coding",
-    "coding",
-    "containers",
+# confs.tech topic/category JSON files to include. general.json is always included.
+# Use upstream filename stems. An empty set includes every discovered topic file.
+CONFS_TECH_TOPICS = {
     "devops",
-    "developer-conference",
-    "genai",
-    "generative-ai",
-    "kubernetes",
-    "llm",
-    "llms",
-    "local llms",
-    "machine-learning",
-    "ml",
-    "open models",
-    "open source",
-    "open source ai",
-    "open-models",
-    "open-source",
-    "open-source-ai",
-    "open-source-llm",
-    "open-weights",
-    "open-weight",
     "opensource",
     "python",
-    "physical.ai",
-    "programming",
-    "robotics",
-    "software-development",
-    "software-engineering"
+    "ai"
 }
 
 # Blacklist: drop any conference whose name/topics contain these terms.
 IGNORE_TOPICS = [
     "bitcoin",
     "crypto",
+    "frontend",
+    "javascript",
     "mobile",
 ]
-
-
-# Normalised (lower, hyphens/spaces collapsed) lookup set.
-TOPICS_NORMALIZED = {t.lower().replace(" ", "-").replace("_", "-") for t in TOPICS}
-TOPICS_NORMALIZED |= {t.lower().replace("-", " ") for t in TOPICS}
-TOPICS_NORMALIZED |= {t.lower().replace(" ", "") for t in TOPICS}
-
-
-IGNORE_TOPICS_NORMALIZED = {t.lower().replace(" ", "-") for t in IGNORE_TOPICS}
 
 # Discovered confs.tech topic files (reference only; NOT used for extraction):
 # DISCOVERED_TOPICS = [

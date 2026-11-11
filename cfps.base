@@ -3,40 +3,47 @@ filters:
     - type == "cfp"
 formulas:
   cfp_title: link(file.path, if(name, name, file.name))
+  # Folder constants — the match is a suffix, so these work whether your vault
+  # stores the notes at `cfps/data` or at `30-speaking-talks/cfps/data`.
+  # Change them only if the folders themselves are named differently.
+  data_dir: '"cfps/data/"'
+  archived_dir: '"cfps/archived/"'
+  # The predicates every view below filters on, so no view repeats a path.
+  is_in_data: '("/" + file.path).contains("/" + formula.data_dir)'
+  is_archived: '("/" + file.path).contains("/" + formula.archived_dir)'
+  is_dismissed: 'dismissed == true || dismissed == "true"'
+  is_live: 'formula.is_in_data && !formula.is_dismissed'
 properties:
   formula.cfp_title:
     displayName: Event
+  dismissed:
+    displayName: Dismissed
   shortlist:
     displayName: Shortlist
   country:
     displayName: Country
   event_date:
     displayName: Event date
-  event_type:
-    displayName: Event type
   location:
     displayName: Location
-  submissions:
-    displayName: Submissions
   cfp_close:
     displayName: CFP close
   topics:
     displayName: Topics
-  benefits:
-    displayName: Benefits
   cfp_url:
     displayName: CFP link
   event_url:
     displayName: Event link
 views:
   - type: table
-    name: All CFPs
+    name: All (+dismissed)
     filters:
       and:
-        - '!file.path.startsWith("cfps/archived/")'
+        - 'formula.is_in_data'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -44,8 +51,6 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
@@ -57,14 +62,14 @@ views:
       note.event_url: 153
       note.cfp_url: 169
   - type: table
-    name: Short listed
+    name: All (-dismissed)
     filters:
       and:
-        - shortlist == true
-        - '!file.path.startsWith("cfps/archived/")'
+        - 'formula.is_live'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -72,20 +77,46 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 201
+      note.topics: 181
+      note.event_url: 153
+      note.cfp_url: 169
+  - type: table
+    name: Short listed (+dismissed)
+    filters:
+      and:
+        - shortlist == true
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Submitted
+    name: Short listed (-dismissed)
     filters:
       and:
-        - list(submissions).length > 0
-        - '!file.path.startsWith("cfps/archived/")'
+        - shortlist == true
+        - 'formula.is_live'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -93,8 +124,26 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Submitted (+dismissed)
+    filters:
+      and:
+        - list(submissions).length > 0
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: ASC
@@ -106,14 +155,15 @@ views:
       note.event_url: 153
       note.cfp_url: 169
   - type: table
-    name: Upcoming (> -30 days)
+    name: Submitted (-dismissed)
     filters:
       and:
-        - cfp_close >= today() - "30d"
-        - '!file.path.startsWith("cfps/archived/")'
+        - list(submissions).length > 0
+        - 'formula.is_live'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -121,20 +171,66 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 159
+      note.topics: 181
+      note.event_url: 153
+      note.cfp_url: 169
+  - type: table
+    name: Upcoming (> -30 days) (+dismissed)
+    filters:
+      and:
+        - cfp_close >= today() - "30d"
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Upcoming (> today)
+    name: Upcoming (> -30 days) (-dismissed)
     filters:
       and:
-        - cfp_close >= today()
-        - '!file.path.startsWith("cfps/archived/")'
+        - cfp_close >= today() - "30d"
+        - 'formula.is_live'
     order:
       - cfp_close
       - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Upcoming (> today) (+dismissed)
+    filters:
+      and:
+        - cfp_close >= today()
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -143,8 +239,6 @@ views:
       - event_url
       - cfp_url
       - languages
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
@@ -157,15 +251,45 @@ views:
       note.event_url: 212
       note.cfp_url: 253
   - type: table
-    name: Closed (90d)
+    name: Upcoming (> today) (-dismissed)
+    filters:
+      and:
+        - cfp_close >= today()
+        - 'formula.is_live'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+      - languages
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      note.shortlist: 65
+      formula.cfp_title: 250
+      note.location: 205
+      note.topics: 181
+      note.event_url: 212
+      note.cfp_url: 253
+  - type: table
+    name: Closed (90d) (+dismissed)
     filters:
       and:
         - cfp_close < today() - "30d"
         - cfp_close >= today() - "90d"
-        - '!file.path.startsWith("cfps/archived/")'
+        - 'formula.is_in_data'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -173,20 +297,40 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf in USA
+    name: Closed (90d) (-dismissed)
+    filters:
+      and:
+        - cfp_close < today() - "30d"
+        - cfp_close >= today() - "90d"
+        - 'formula.is_live'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Conf in USA (+dismissed)
     filters:
       and:
         - country == "USA"
-        - '!file.path.startsWith("cfps/archived/")'
+        - 'formula.is_in_data'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -194,20 +338,39 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf outside USA
+    name: Conf in USA (-dismissed)
+    filters:
+      and:
+        - country == "USA"
+        - 'formula.is_live'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Conf outside USA (+dismissed)
     filters:
       and:
         - country != "USA"
-        - '!file.path.startsWith("cfps/archived/")'
+        - 'formula.is_in_data'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -215,20 +378,19 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Online
+    name: Conf outside USA (-dismissed)
     filters:
       and:
-        - country == "Online"
-        - '!file.path.startsWith("cfps/archived/")'
+        - country != "USA"
+        - 'formula.is_live'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -236,8 +398,26 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+  - type: table
+    name: Online (+dismissed)
+    filters:
+      and:
+        - country == "Online"
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: ASC
@@ -245,10 +425,33 @@ views:
       note.event_date: 139
       note.location: 127
   - type: table
-    name: Local events
+    name: Online (-dismissed)
     filters:
       and:
-        - '!file.path.startsWith("cfps/archived/")'
+        - country == "Online"
+        - 'formula.is_live'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.event_date: 139
+      note.location: 127
+  - type: table
+    name: Local events (+dismissed)
+    filters:
+      and:
+        - 'formula.is_in_data'
         - or:
             - location.contains("San Francisco")
             - location.contains("San Jose")
@@ -274,6 +477,7 @@ views:
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -281,8 +485,6 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
@@ -293,16 +495,36 @@ views:
       note.cfp_url: 253
       note.event_url: 212
   - type: table
-    name: By source
+    name: Local events (-dismissed)
     filters:
       and:
-        - '!file.path.startsWith("cfps/archived/")'
-    groupBy:
-      property: source
-      direction: ASC
+        - 'formula.is_live'
+        - or:
+            - location.contains("San Francisco")
+            - location.contains("San Jose")
+            - location.contains("Oakland")
+            - location.contains("Berkeley")
+            - location.contains("Santa Clara")
+            - location.contains("Sunnyvale")
+            - location.contains("Palo Alto")
+            - location.contains("Mountain View")
+            - location.contains("Cupertino")
+            - location.contains("Redwood")
+            - location.contains("Menlo Park")
+            - location.contains("San Mateo")
+            - location.contains("Milpitas")
+            - location.contains("Fremont")
+            - location.contains("Hayward")
+            - location.contains("Emeryville")
+            - location.contains("Los Altos")
+            - location.contains("Los Gatos")
+            - location.contains("Pleasanton")
+            - location.contains("Livermore")
+            - location.contains("Bay Area")
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -310,22 +532,46 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 245
+      note.cfp_url: 253
+      note.event_url: 212
+  - type: table
+    name: Dismissed (+dismissed)
+    filters:
+      and:
+        - 'formula.is_in_data'
+        - 'formula.is_dismissed'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: By country
+    name: Dismissed (-dismissed)
     filters:
       and:
-        - '!file.path.startsWith("cfps/archived/")'
-    groupBy:
-      property: country
-      direction: ASC
+        - 'formula.is_in_data'
+        - 'formula.is_dismissed'
+        - '!formula.is_dismissed'
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -333,42 +579,18 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
     sort:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: By event type
+    name: Archived (+dismissed)
     filters:
       and:
-        - '!file.path.startsWith("cfps/archived/")'
-    groupBy:
-      property: event_type
-      direction: ASC
-    order:
-      - cfp_close
-      - formula.cfp_title
-      - event_type
-      - event_date
-      - location
-      - topics
-      - source
-      - event_url
-      - cfp_url
-      - submissions
-      - benefits
-    sort:
-      - property: cfp_close
-        direction: ASC
-  - type: table
-    name: Archived
-    filters:
-      and:
-        - file.path.startsWith("cfps/archived/")
+        - formula.is_archived
     order:
       - cfp_close
       - shortlist
+      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -376,8 +598,26 @@ views:
       - source
       - event_url
       - cfp_url
-      - submissions
-      - benefits
+    sort:
+      - property: cfp_close
+        direction: DESC
+  - type: table
+    name: Archived (-dismissed)
+    filters:
+      and:
+        - formula.is_archived
+        - '!formula.is_dismissed'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
     sort:
       - property: cfp_close
         direction: DESC

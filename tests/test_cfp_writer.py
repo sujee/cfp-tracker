@@ -550,6 +550,20 @@ class TestUserContentPreserved(WriterTestCase):
         self.assertEqual(fm["submissions"], ["[[my-talk]]"])
         self.assertIn("Hello notes.", self.path.read_text(encoding="utf-8"))
 
+    def test_dismissed_flag_survives_a_genuine_update(self) -> None:
+        # ``dismissed`` is user-owned metadata (not in KNOWN_FM_KEYS), so a
+        # source-driven rewrite must keep it: every live view in ``cfps.base``
+        # filters on it, and losing it would resurrect a dismissed CFP.
+        self.write_initial()
+        self.edit("submissions: []", "dismissed: true\nsubmissions: []")
+
+        status = cw.upsert(self.data, sample_row(location="Barcelona, Spain"))
+
+        self.assertEqual(status, "updated")
+        self.assertTrue(self.frontmatter()["dismissed"])
+        self.assertIn("dismissed: true", self.path.read_text(encoding="utf-8"))
+        self.assertEqual(cw.upsert(self.data, sample_row(location="Barcelona, Spain")), "unchanged")
+
     def test_known_key_is_not_treated_as_user_metadata(self) -> None:
         # A malformed known key must be regenerated, not preserved verbatim.
         self.write_initial()

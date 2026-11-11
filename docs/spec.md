@@ -75,7 +75,7 @@ The system shall:
 | Shape normalizer | `src/normalize-data.py` + `cfp_writer.normalize_file` | Re-emit existing notes in the current shape. |
 | Link checker | `src/check-links.py` | Concurrently check HTTP links extracted from a Markdown report. |
 | Compatibility shim | `src/build-open-cfps.py` | Delegate to `process-developer-events.py`. |
-| Configuration | `src/config.py` | Relevant-topic selection, ignored terms, and discovered-topic comments. |
+| Configuration | `src/config.py` | confs.tech topic selection, ignored terms, and discovered-topic comments. |
 | Obsidian artifacts | `cfps.base`, `cfps-dashboard.md` | Browse and aggregate notes. |
 
 ### 3.2 Repository and vault boundary
@@ -590,7 +590,7 @@ Manual input has no recency filter.
 `src/config.py` defines:
 
 ```text
-IGNORE_TOPICS = [bitcoin, crypto, mobile]
+IGNORE_TOPICS = [bitcoin, crypto, frontend, javascript, mobile]
 ```
 
 Source adapters reject configured terms as follows:
@@ -603,7 +603,7 @@ Source adapters reject configured terms as follows:
 | adato-tracker | Case-insensitive substring in event name. |
 | Manual input | Case-insensitive substring in cleaned event name; manual topic text is not used for exclusion. |
 
-Configuration import failures are broadly caught by adapters and result in no ignore list or topic whitelist.
+Configuration import failures are broadly caught by adapters and result in no ignore list or confs.tech topic allowlist.
 
 ### 10.3 Country canonicalization
 
@@ -773,7 +773,7 @@ For `today.year` and `today.year + 1`:
 4. Always include `general`; include other topics only when configured selection allows them.
 5. Fetch `<year>/<topic>.json` and process list-valued data.
 
-Selection uses `TOPICS_NORMALIZED`; when that set is empty, all discovered topic files are allowed. Year-listing and per-topic fetch errors are caught, printed to standard error, and skipped, allowing a partial result.
+Selection uses `CONFS_TECH_TOPICS`, compared case-insensitively with underscores normalized to hyphens. When that set is empty, all discovered topic files are allowed. Year-listing and per-topic fetch errors are caught, printed to standard error, and skipped, allowing a partial result.
 
 Readable JSON caches are preferred indefinitely:
 
@@ -947,8 +947,6 @@ A recognized range contributes only its start date. Unrecognized nonempty manual
 
 Standalone options are `--out`, `--input`, and `--manifest`. A missing input directory prints an error and exits 1. This differs from the full wrapper, which silently omits manual processing when its input directory is absent.
 
-The module also contains `extract_urls` and `fetch_title` helpers, but the normal table-to-note pipeline does not call them.
-
 ## 12. Orphan archiving specification
 
 **Implementation:** `src/archive-orphans.py`
@@ -1065,36 +1063,37 @@ Other 2xx statuses count as not-200. A 403 or 429 response means blocked/rate-li
 type == "cfp"
 ```
 
-Its `Event` formula links to `file.path`, displaying `name` when truthy and otherwise `file.name`. The `event_type` property is registered with display name **Event type**, making it available to Base grouping/filter controls.
+Its `Event` formula links to `file.path`, displaying `name` when truthy and otherwise `file.name`.
 
-Every live view separately excludes paths beginning with `cfps/archived/`; the Archived view selects that prefix. The archive exclusion is intentionally per-view because the global filter ANDs with each view. Live views do not positively restrict notes to `cfps/data/`.
+Data views use the path-suffix predicate `formula.is_in_data`. Every view has **(+dismissed)** and **(-dismissed)** versions. The plus version includes dismissed notes. The minus version hides them. Standard data views use `formula.is_live`, while their plus variants use `formula.is_in_data`. Archived follows the same naming pattern. **Dismissed (-dismissed)** is empty by definition.
 
-The vault path literals are part of the configuration. Moving vault folders requires updating the path expressions in the base.
+Folder filtering is per-view because the global filter ANDs with each view. A global data-folder restriction would blank Archived. The `data_dir` and `archived_dir` formulas hold the configurable path suffixes.
 
 ### 15.2 Base views
 
 | View | Filter and behavior |
 |---|---|
-| **All CFPs** | Every non-archived CFP note; no deadline restriction. |
-| **Short listed** | Non-archived notes with `shortlist == true`; no deadline restriction. |
-| **Submitted** | Non-archived notes where `list(submissions).length > 0`; no deadline restriction. |
-| **Upcoming (> -30 days)** | `cfp_close >= today() - "30d"`; includes that cutoff day and all future deadlines. |
-| **Upcoming (> today)** | `cfp_close >= today()`; inclusive despite the label's `>`. |
-| **Closed (90d)** | `cfp_close < today() - "30d"` and `>= today() - "90d"`. |
-| **Conf in USA** | `country == "USA"`. |
-| **Conf outside USA** | `country != "USA"`; includes online and empty/unknown country values. |
-| **Online** | `country == "Online"`. |
-| **Local events** | Any configured Bay Area location substring matches. |
-| **By source** | Live notes grouped ascending by `source`. |
-| **By country** | Live notes grouped ascending by `country`. |
-| **By event type** | Live notes grouped ascending by `event_type`, with the type shown as a column, supporting separate browsing/filtering of conferences, meetups, and other classifications. |
-| **Archived** | Only notes below `cfps/archived/`; sorted by deadline descending. |
+| **All (-dismissed)** | Every non-dismissed CFP note under the configured data path. No deadline restriction. |
+| **All (+dismissed)** | Every CFP note under the configured data path, including dismissed notes. |
+| **Short listed (-dismissed)** | Non-dismissed data notes with `shortlist == true`. No deadline restriction. |
+| **Submitted (-dismissed)** | Non-dismissed data notes where `list(submissions).length > 0`. No deadline restriction. |
+| **Upcoming (> -30 days) (-dismissed)** | `cfp_close >= today() - "30d"`. Includes that cutoff day and all future deadlines. |
+| **Upcoming (> today) (-dismissed)** | `cfp_close >= today()`. Inclusive despite the label's `>`. |
+| **Closed (90d) (-dismissed)** | `cfp_close < today() - "30d"` and `>= today() - "90d"`. |
+| **Conf in USA (-dismissed)** | `country == "USA"`. |
+| **Conf outside USA (-dismissed)** | `country != "USA"`. Includes online and empty or unknown country values. |
+| **Online (-dismissed)** | `country == "Online"`. |
+| **Local events (-dismissed)** | Any configured Bay Area location substring matches. |
+| **Dismissed (+dismissed)** | Dismissed notes under the configured data path. |
+| **Dismissed (-dismissed)** | Empty by definition because the filters require both dismissal states. |
+| **Archived (-dismissed)** | Non-dismissed notes under the configured archived path. Sorted by deadline descending. |
+| **Archived (+dismissed)** | All notes under the configured archived path. Sorted by deadline descending. |
 
-All non-grouped live views sort `cfp_close` ascending. Grouped views also sort by deadline ascending within the grouping configuration.
+For regular data views and Archived, the plus and minus versions differ only in dismissal filtering. All data views sort `cfp_close` ascending.
 
 The Local events substring list currently covers San Francisco, San Jose, Oakland, Berkeley, Santa Clara, Sunnyvale, Palo Alto, Mountain View, Cupertino, Redwood, Menlo Park, San Mateo, Milpitas, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, and Bay Area.
 
-Most views display a common set of CFP properties. Upcoming (> today) additionally includes `languages` in its ordered columns.
+Most views display a common set of CFP properties. Every view shows `shortlist` followed immediately by `dismissed` after `cfp_close`. No view displays `benefits` or `submissions`. Submitted views still filter on submission data. Upcoming (> today) additionally includes `languages` in its ordered columns.
 
 ### 15.3 Dataview dashboard
 
@@ -1244,8 +1243,6 @@ A nominal refresh must not be interpreted as proof that every source was fetched
 
 Every confs.tech CLI run calls `update_discovered_config`, which rewrites the commented `DISCOVERED_TOPICS` block in `src/config.py`. Refresh side effects therefore include more than notes, caches, and manifests.
 
-The current `TOPICS` set also has no comma between adjacent `"kubernetes"` and `"llm"` string literals. Python concatenates them into `"kubernetesllm"`, so separate `kubernetes` and `llm` entries are not selected by the normalized confs.tech topic whitelist. This appears accidental but is current behavior.
-
 ### 17.5 Identity changes do not preserve history automatically
 
 Changing a name or date can create a new path and new first-seen stamps. Existing user metadata remains at the old path until that file is archived or manually reconciled. There is no persistent conference ID independent of name/deadline/URL heuristics.
@@ -1268,7 +1265,7 @@ Similarly, when URL-based deduplication selects a winner, losing-note user conte
 - `--focus-tags` and `--no-focus` do not affect CFP notes.
 - `--no-frontmatter` does not remove per-note frontmatter.
 - `--no-backup` has no effect on per-note output.
-- `backup_previous_report` and country-flag rendering are not used by the active note path.
+Country-flag rendering is not used by the active note path.
 
 `src/build-open-cfps.py` is retained solely as a compatibility shim and carries a stated removal date of 2027-03-01.
 

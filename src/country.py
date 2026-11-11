@@ -43,7 +43,7 @@ _ALIAS_GROUPS: dict[str, list[str]] = {
         "wales",
         "northern ireland",
     ],
-    "Online": [
+    ONLINE: [
         "online",
         "virtual",
         "remote",

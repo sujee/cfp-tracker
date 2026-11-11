@@ -20,14 +20,18 @@ ln -s /path/to/your-vault/cfps/archived archived
 
 **Configuration**
 
-Inspect [src/config.py](src/config.py)  and set topics you are interested in.
+Inspect [src/config.py](src/config.py) and choose which confs.tech topic files to fetch:
 
 ```python
-TOPICS = {
-    "ai",
-    "devrel"
-    # and so on
+CONFS_TECH_TOPICS = {
+    "devops",
+    "opensource",
+    "python",
+}
 ```
+
+`general.json` is always included. Use `CONFS_TECH_TOPICS = set()` to fetch every confs.tech
+category. This setting does not filter the other sources.
 
 Optionally, you can set `IGNORE_TOPICS` as well
 
@@ -93,27 +97,33 @@ uv run python -m unittest discover -s tests
 - `cfps/data` : where imported CFPs are 
 - `cfps/archived` : deleted / archived CFPs
 
-Copy these files into your Obsidian Vault, in the folder that contains `cfps/` (usually the
-vault root), so the paths resolve exactly as `cfps/data` and `cfps/archived`.
+Copy these files into your Obsidian Vault — the folder that contains `cfps/`, or anywhere else
+you keep your dashboards.
 
 - [cfps.base](cfps.base): Has views defined to browse CFPs
 - [cfps-dashboard.md](cfps-dashboard.md): CFP stats (Dataview tables: by country, topic, month)
 
-> **Vault path:** `cfps.base` excludes archived notes by the path `cfps/archived/`, and the
-> dashboard reads `cfps/data`. If your vault keeps the notes elsewhere, find-and-replace those
-> two strings — otherwise archived notes reappear in the live views and **Archived** is empty.
+> **Vault path:** `cfps.base` keeps its two folder paths in `data_dir` / `archived_dir` at the
+> top of the file, matched as path *suffixes* — so it works with `cfps/data` at the vault root
+> **and** with `30-speaking-talks/cfps/data`. If those note folders live elsewhere, change just
+> those two constants and the dashboard's `FROM` clause.
 
 
 
 A few views defined in `cfps.base` (you can customize them!)
 
+Every view has a **(+dismissed)** version and a **(-dismissed)** version. The plus version includes dismissed notes. The minus version hides them. Every view shows **Shortlist** and **Dismissed** together, immediately after **CFP close**. No view displays **Benefits** or **Submissions**.
+
 | View | What it shows |
 |---|---|
-| **All CFPs** | Every live note. The default. |
+| **All (-dismissed)** | Every non-dismissed note in `data/`. |
+| **All (+dismissed)** | Every note in `data/`. The **Dismissed** column shows the flag. |
 | **Upcoming (> today)** | Only still-open CFPs (`cfp_close` today or later). Your working list. |
 | **Upcoming (> -30 days)** | Open CFPs plus those that closed in the last 30 days. |
 | **Closed (90d)** | CFPs that closed 30 to 90 days ago, for recap. |
 | **Short listed** | Notes you flagged `shortlist: true`. |
+| **Dismissed (+dismissed)** | Only dismissed notes. The minus version is empty by definition. |
+| **Archived (+dismissed) / Archived (-dismissed)** | Archived notes with or without dismissed notes. |
 | **Submitted** | Notes with at least one wiki link under `submissions`. |
 | **Conf in USA / Conf outside USA / Online** | Geography filters. |
 | **Local events** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
@@ -123,6 +133,7 @@ A few views defined in `cfps.base` (you can customize them!)
 - Do a run to update CFPS.  See [quick start](#Quick-start)
 - Check `cfps.base` in Obsidian
 - Browse CFPs and shortlist the the one's you are interested in - by selecting the **short listed** flag
+- Not interested in one? Add the property `dismissed: true` to its note. **(-dismissed)** views hide it immediately. The corresponding **(+dismissed)** view still shows it. No pipeline run is needed. The note stays in `data/`, so your notes and history survive a refresh. Clear the flag to bring it back. **Dismissed (+dismissed)** lists all dismissed notes.
 
 ## Options
 

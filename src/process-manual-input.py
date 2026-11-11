@@ -5,16 +5,9 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import urllib.request
 from pathlib import Path
 from urllib.parse import unquote
 
-URL_RE = re.compile(r"https?://[^\s)\]<>\"']+", re.IGNORECASE)
-TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-OG_TITLE_RE = re.compile(
-    r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\'](.*?)["\']',
-    re.IGNORECASE | re.DOTALL,
-)
 # Markdown link in a table cell: ``[text](url)`` (optional title).
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _EMPH_RE = re.compile(r"[*_]{1,3}")
@@ -71,33 +64,6 @@ def _normalize_close(raw: str) -> str:
     return text
 
 
-def extract_urls(text: str) -> list[str]:
-    urls = []
-    seen = set()
-    for m in URL_RE.finditer(text):
-        url = m.group(0).rstrip(".,;:!?")
-        if url not in seen:
-            seen.add(url)
-            urls.append(url)
-    return urls
-
-
-def fetch_title(url: str, timeout: int = 10) -> str:
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "cfp-merge/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            html = resp.read(200_000).decode("utf-8", errors="ignore")
-    except Exception:
-        return ""
-    m = OG_TITLE_RE.search(html)
-    if m:
-        return re.sub(r"\s+", " ", m.group(1)).strip()
-    m = TITLE_RE.search(html)
-    if m:
-        return re.sub(r"\s+", " ", m.group(1)).strip()
-    return ""
-
-
 def parse_rows(text: str) -> list[dict]:
     rows = []
     try:
@@ -108,7 +74,7 @@ def parse_rows(text: str) -> list[dict]:
         _IGNORE = []
 
     for line in text.splitlines():
-        if line.strip().startswith("|") and "|" in line:
+        if line.strip().startswith("|"):
             cols = [c.strip() for c in line.strip().strip("|").split("|")]
             if len(cols) >= 5 and not cols[0].lower().startswith("conf name") and not set(cols[0]) <= set("-: "):
                 name, url = _clean_name(cols[0])
@@ -119,9 +85,9 @@ def parse_rows(text: str) -> list[dict]:
                 rows.append(
                     {
                         "name": name,
-                        "location": cols[1] if len(cols) > 1 else "",
-                        "cfp_close": _normalize_close(cols[3] if len(cols) > 3 else ""),
-                        "event_date": cols[4] if len(cols) > 4 else "",
+                        "location": cols[1],
+                        "cfp_close": _normalize_close(cols[3]),
+                        "event_date": cols[4],
                         "topics": cols[5] if len(cols) > 5 else "",
                         "event_url": _unwrap_url(url),
                         "cfp_url": "",

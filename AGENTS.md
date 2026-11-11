@@ -128,6 +128,7 @@ event_url: https://…           # conference site
 cfp_url: https://…             # CFP / submission URL
 source: developers.events      # developers.events | cfp.ninja | confs.tech | adato-tracker | manual
 shortlist: false               # user flag, preserved across runs
+dismissed: false               # optional user flag: true hides it from every live view
 submissions: []                # wiki links (a list), preserved across runs
 created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
 updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
@@ -209,12 +210,26 @@ currently change nothing the base reads. Kept for reference / if the report retu
   the suite passing — update tests whose expectations legitimately changed, and add tests for
   new behaviour. Fixtures are real slices of the downloaded data under `tests/fixtures/`.
 - **Dropped events are archived, not left behind.** `process-all.py` moves any `type: cfp` note
-  under `data/` that **no** source produced this run into `archived/` (byte-for-byte — nothing
-  edited or deleted). Each **live view** in `cfps.base` excludes that folder
-  (`!file.path.startsWith(.../archived/)`) and a separate **Archived** view matches it — the
-  filter is per-view, because the base's top-level filter ANDs with every view (putting the
-  exclusion up top would blank the Archived view). Only `type: cfp` notes are touched; other
-  files you drop in `data/` are left alone. `--no-archive` disables it.
+  under `data/` that **no** source produced this run into `archived/` (byte-for-byte: nothing
+  edited or deleted). Each `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
+  notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Archived** has the same
+  pair of variants. **Dismissed (-dismissed)** is empty by definition. Folder filters are per-view
+  because the base's top-level filter ANDs with every view, so a global
+  data-folder restriction would blank Archived. Only `type: cfp` notes are touched. Other files in
+  `data/` are left alone. `--no-archive` disables archiving.
+- **`dismissed: true` is the user's "not interested" flag, and it needs no pipeline support.**
+  It is absent from `KNOWN_FM_KEYS`, so `_extra_frontmatter_lines` carries it through every
+  source-driven rewrite and every `normalize-data.py` pass; the note stays in `data/` (a manual
+  move to `archived/` would instead be re-created by the next run). `cfps.base` derives
+  `formula.is_dismissed` / `formula.is_live` from it, so a view updates as soon as the property
+  is set — no re-run. The two folder paths live once each as `formula.data_dir` /
+  `formula.archived_dir` and match as path *suffixes*
+  (`("/" + file.path).contains("/" + formula.data_dir)`), so the same base file works for a
+  vault rooted at `cfps/` (the landing instructions) and for this vault
+  (`30-speaking-talks/cfps/`, base at `0-dashboard/bases/cfps.base`, dashboard at
+  `0-dashboard/cfps-dashboard.md`). The dashboard's Dataview `FROM "cfps/data"` is a literal
+  vault-relative folder and does **not** suffix-match, so keep it in step with the vault's own
+  copy.
 - **Manual `input/*.md` rows are markdown tables.** The first column may be a link
   (`**[Name](url)**`): the parser takes the link *text* as `name`, the link as `event_url`
   (unwrapping Google `.../url?...&q=<real>` redirects), and strips emphasis. Without this the

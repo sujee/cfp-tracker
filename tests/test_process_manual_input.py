@@ -71,6 +71,19 @@ class TestParseRows(unittest.TestCase):
         self.assertEqual(dww["name"], "DeveloperWeek 2027 / AI DevWorld")  # not the raw link
         self.assertEqual(dww["event_url"], "https://www.developerweek.com/")  # unwrapped from Google
 
+    def test_all_markdown_links_become_plain_names_and_direct_urls(self) -> None:
+        expected = {
+            "QCon London 2027": "https://qconlondon.com/",
+            "Seattle Startup Summit 2027": "https://www.nvidia.com/gtc/",
+            "DeveloperWeek 2027 / AI DevWorld": "https://www.developerweek.com/",
+            "AI Engineer Europe 2027": "https://www.ai.engineer/",
+            "Agentic AI Summit 2027": "https://events.linuxfoundation.org/",
+        }
+        self.assertEqual({r["name"]: r["event_url"] for r in self.rows}, expected)
+        for row in self.rows:
+            with self.subTest(name=row["name"]):
+                self.assertNotRegex(row["name"], r"https?://|\]\(|\*\*")
+
     def test_parseable_close_is_normalised(self) -> None:
         ai_engineer = next(r for r in self.rows if "AI Engineer Europe 2027" in r["name"])
         self.assertEqual(ai_engineer["cfp_close"], "2026-12-31")
@@ -104,6 +117,19 @@ class TestMainEndToEnd(unittest.TestCase):
             self.assertIn("found 5 (new 5, updated 0, unchanged 0)", proc.stdout)
             notes = sorted(out.rglob("*.md"))
             self.assertEqual(len(notes), 5)
+            self.assertEqual(
+                {note.relative_to(out).as_posix() for note in notes},
+                {
+                    "2026/2026-12-31_ai-engineer-europe-2027.md",
+                    "2027/2027_agentic-ai-summit-2027.md",
+                    "2027/2027_developerweek-2027-ai-devworld.md",
+                    "2027/2027_qcon-london-2027.md",
+                    "2027/2027_seattle-startup-summit-2027.md",
+                },
+            )
+            agentic = (out / "2027/2027_agentic-ai-summit-2027.md").read_text(encoding="utf-8")
+            self.assertIn("\nname: Agentic AI Summit 2027\n", agentic)
+            self.assertNotIn("google.com/url", agentic)
             self.assertIn("source: manual", notes[0].read_text(encoding="utf-8"))
 
 

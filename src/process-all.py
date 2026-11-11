@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 
 BOLD = "\033[1m"
-DIM = "\033[2m"
 RESET = "\033[0m"
 
 

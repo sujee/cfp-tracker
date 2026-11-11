@@ -36,7 +36,6 @@ import sys
 import subprocess
 import urllib.request
 from pathlib import Path
-import shutil
 
 try:
     import sys as _sys
@@ -249,45 +248,6 @@ def compute_cutoff(
 # ---------------------------------------------------------------------------
 # I/O — fetch & cache
 # ---------------------------------------------------------------------------
-
-
-def backup_previous_report(out_path: Path) -> Path | None:
-    """Save existing *out_path* into ``<parent>/backups/`` with a timestamp.
-
-    Called before overwriting during an update. Uses UTC timestamp
-    ``YYYY-MM-DDTHH-MM-SSZ`` (hyphen-safe) like
-    ``cfps-2026-11-02T14-30-05Z.md``. Returns backup path or ``None`` when
-    there was nothing to back up.
-
-    Backup folder is created alongside the output file (for the legacy project
-    report: ``tmp/backups/``). Scratch outputs (e.g. ``/tmp/…``) get
-    ``/tmp/backups/`` — harmless and easy to ignore. No pruning — restore
-    manually by copying the desired backup over the live file.
-    """
-    if not out_path.exists() or not out_path.is_file():
-        return None
-    # Avoid backing up the backup folder itself (edge: out_path inside backups/)
-    if out_path.parent.name == "backups":
-        return None
-    backup_dir = out_path.parent / "backups"
-    try:
-        backup_dir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return None
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-    backup_name = f"{out_path.stem}-{stamp}{out_path.suffix}"
-    backup_path = backup_dir / backup_name
-    # Collision guard — same-second double run
-    counter = 2
-    while backup_path.exists():
-        backup_name = f"{out_path.stem}-{stamp}-{counter}{out_path.suffix}"
-        backup_path = backup_dir / backup_name
-        counter += 1
-    try:
-        shutil.copy2(out_path, backup_path)
-        return backup_path
-    except OSError:
-        return None
 
 
 def fetch_json(cache_dir: str | os.PathLike[str], filename: str, url: str) -> Any:
@@ -675,9 +635,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     for r in rows:
         r.setdefault("source", "developers.events")
         r.setdefault("event_date", event_date_start(r.get("dates") or []))
-        r.setdefault("cfp_close", r["close"].isoformat() if hasattr(r.get("close"), "isoformat") else str(r.get("close")))
-        r.setdefault("topics", r.get("topics") or [])
-        r.setdefault("country", r.get("country") or "")
+        r.setdefault("cfp_close", r["close"].isoformat())
         r.setdefault("location", r.get("loc", ""))
         upsert_counted(data_dir, r, counts, produced)
 

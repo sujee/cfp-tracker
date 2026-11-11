@@ -69,7 +69,7 @@ class TestFindOrphans(ArchiveTestCase):
 class TestArchiveOrphans(ArchiveTestCase):
     def test_moves_orphan_and_leaves_produced(self) -> None:
         self.note("2026/keep.md")
-        rel = self.note("2026/drop.md", "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n\nmine\n")
+        self.note("2026/drop.md", "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n\nmine\n")
 
         moved = arch.archive_orphans(self.data, self.archive, {"2026/keep.md"})
 
