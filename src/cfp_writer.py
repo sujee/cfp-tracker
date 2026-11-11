@@ -335,6 +335,15 @@ def _as_list(value) -> list:
     return [s] if s else []
 
 
+def _casefold_list(values) -> list[str]:
+    """``_as_list`` normalisation with every value folded to lowercase.
+
+    ``languages`` is always stored folded (``English`` -> ``english``), so the
+    note's form stays stable when the source's tag spellings vary by edition.
+    """
+    return [str(v).casefold() for v in _as_list(values)]
+
+
 def _as_bool(value) -> bool:
     """Normalise a parsed value to a bool (defaults to ``False``)."""
     if isinstance(value, bool):
@@ -515,7 +524,8 @@ def _render(
     if row.get("benefits"):
         fm.append(f"benefits: {_yaml_list(row.get('benefits'))}")
     # ``languages`` comes from the developers.events event tags; other sources
-    # don't carry it, so it is written only when known.
+    # don't carry it, so it is written only when known. Values are case-folded,
+    # so a note always stores them lowercase.
     if row.get("languages"):
         fm.append(f"languages: {_yaml_list(row.get('languages'))}")
     fm += [
@@ -578,16 +588,19 @@ def _merge_list(existing: list[str], incoming) -> list[str]:
     """Keep the existing list verbatim and append newly seen incoming values.
 
     Used for the cumulative list fields (``topics`` and ``languages``).
-    Matching is exact and case-sensitive. Existing order (and any existing
-    duplicates) is preserved; incoming duplicates are appended only once.
+    Matching is case-insensitive (``English`` and ``english`` are the same
+    value), so a capitalization-only upstream change never appends and the
+    existing or first-seen spelling always wins. Existing order (and any
+    existing duplicates) is preserved; incoming duplicates are appended once.
     """
     merged = list(existing)
-    seen = set(merged)
+    seen = {str(v).casefold() for v in merged}
     for value in incoming or []:
-        topic = str(value)
-        if topic not in seen:
-            merged.append(topic)
-            seen.add(topic)
+        item = str(value)
+        key = item.casefold()
+        if key not in seen:
+            merged.append(item)
+            seen.add(key)
     return merged
 
 
@@ -630,8 +643,11 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     already matches the file (see :func:`_source_props_match`) and the
     ``created``/``updated`` stamps are valid ISO dates. Topics and languages
     are cumulative: existing values are preserved and new incoming values are
-    appended, so a hand-added value or one the source removed/reordered
-    upstream does not force a rewrite, while a genuinely new one does.
+    appended (case-insensitive match), so a hand-added value or one the source
+    removed/reordered upstream does not force a rewrite, while a genuinely new
+    one does. ``languages`` values are case-folded, so the note always stores
+    them lowercase: a pre-existing capitalised value reads as one mismatch,
+    is rewritten lowercase once, and then settles.
     ``event_type`` is sticky: an existing non-empty value is preserved, and a
     missing one is inferred from the conference name and back-filled without
     constituting a source change.
@@ -710,7 +726,13 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     # unchanged cumulative list remains a no-op and only genuinely new
     # values trigger a rewrite. ``benefits`` keeps its replace semantics.
     row["topics"] = _merge_list(_as_list(fm.get("topics")), row.get("topics"))
-    row["languages"] = _merge_list(_as_list(fm.get("languages")), row.get("languages"))
+    # ``languages`` values are case-folded on both sides, so the note always
+    # stores them lowercase. A pre-existing capitalised value reads as one
+    # mismatch against the folded merge — the note is rewritten lowercase once
+    # and then settles.
+    row["languages"] = _merge_list(
+        _casefold_list(fm.get("languages")), _casefold_list(row.get("languages"))
+    )
     props_match = _source_props_match(fm, row)
     if (
         props_match
@@ -799,7 +821,7 @@ def normalize_file(path: Path, today=None) -> bool:
         row["event_date"] = _as_str(fm.get("conf_date"))
     row["topics"] = _as_list(fm.get("topics"))
     row["benefits"] = _as_list(fm.get("benefits"))
-    row["languages"] = _as_list(fm.get("languages"))
+    row["languages"] = _casefold_list(fm.get("languages"))
     row["event_type"] = _event_type_for(fm, row)
     row["country"] = normalize_country(row.get("country"))
     row["cfp_url"] = strip_utm(row.get("cfp_url"))

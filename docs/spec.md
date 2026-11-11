@@ -299,7 +299,7 @@ User edits alone do not trigger a source refresh write. When source fields are u
 1. Read the existing list through the same YAML-to-list normalization used for other list fields.
 2. Keep that existing list unchanged as the prefix, including hand-added values, source values that disappeared upstream, existing order, and any existing duplicates.
 3. Process incoming source values in their supplied order and append each value not already present.
-4. Match values as exact, case-sensitive strings. Incoming duplicates are appended only once.
+4. Match values case-insensitively (`English` and `english` are the same value; the existing or first-seen spelling wins). Incoming duplicates are appended only once. `languages` values are additionally case-folded before the merge, so the note always stores them lowercase.
 
 The merged list, rather than the raw incoming list, is used for source-property comparison and rendering. For a new note, there is no existing prefix, so the result is the incoming source values deduplicated in first-seen order.
 
@@ -310,6 +310,7 @@ This produces the following refresh behavior:
 - A source contributing no topics or languages leaves the existing lists intact.
 - At least one genuinely new incoming value changes the desired list, so the note is rewritten and `updated` advances to the run date.
 - The next refresh with the same incoming values is `unchanged`; bytes, mtime, and both stamps remain untouched.
+- A capitalised `languages` value (`English`) is case-folded on the next write, so an old note is rewritten lowercase exactly once and is then stable; capitalization-only changes never append a near-duplicate.
 - When another source property also changes, the same merge rules apply during that rewrite.
 
 `benefits` is the exception among list fields: it is replaced outright on every rewrite and follows the plain §6.2 comparison.
@@ -458,7 +459,7 @@ A note is `unchanged` only when:
 - `event_type` is nonempty; its actual value need not equal a new inference because existing values are sticky. A missing value backfills instead of taking the no-op path.
 - Every source-owned scalar equals the normalized incoming value after YAML type normalization.
 - `benefits` equals its incoming list, including item order.
-- `languages` equals the cumulative merge of existing and incoming languages, so user additions, upstream removals, and upstream reordering alone do not force an update.
+- `languages` equals the case-folded cumulative merge of existing and incoming languages, so user additions, upstream removals, upstream reordering, and capitalization-only changes alone do not force an update.
 - `topics` equals the cumulative merge of existing and incoming topics, so user additions, upstream removals, and upstream reordering alone do not force an update.
 - Both `created` and `updated` match `^\d{4}-\d{2}-\d{2}$`.
 

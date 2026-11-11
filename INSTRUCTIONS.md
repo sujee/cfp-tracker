@@ -91,9 +91,11 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
   `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`,
   the `## Notes` body, and any extra frontmatter property you add. `topics` is cumulative:
-  existing values are kept and new source values are appended (exact, case-sensitive match), so
-  hand-added topics and topics removed/reordered upstream remain unchanged. Only a genuinely
-  new topic or another source-property change rewrites the note; a no-op refresh touches nothing.
+  existing values are kept and new source values are appended (case-insensitive match — `English`
+  and `english` are one value), so hand-added topics and topics removed/reordered upstream remain
+  unchanged. Only a genuinely new topic or another source-property change rewrites the note; a
+  no-op refresh touches nothing. `languages` values are case-folded, so notes always store them
+  lowercase.
 - `event_type` is inferred for new/missing values as `conference`, `meetup`, `summit`, `workshop`,
   `hackathon`, or `webinar` (default `conference`; `other` is available for manual curation).
   Existing non-empty values are sticky, including manual overrides. A missing value back-fills

@@ -169,13 +169,17 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `upsert` and `normalize_file` with return status updated when a file changes, but valid
   `created`/`updated` stamps stay unchanged unless another source property changed.
 - **`topics` and `languages` are cumulative, not replaced.** `_merge_list` keeps the existing list verbatim
-  as a prefix and appends only incoming values not already present (exact, case-sensitive
-  match; incoming duplicates append once). Hand-added values and source values removed or
+  as a prefix and appends only incoming values not already present (case-insensitive
+  match — `English` and `english` are one value, the existing spelling wins; incoming
+  duplicates append once). Hand-added values and source values removed or
   reordered upstream therefore survive without forcing a rewrite. A genuinely new value
   does rewrite the note and advances `updated`; the next identical refresh is unchanged.
   The merged list is built before `_source_props_match`, so this no-op behavior falls out
-  of the normal semantic list comparison. The one exception is `benefits`, which is
-  replaced on update.
+  of the normal semantic list comparison. `languages` values are additionally
+  case-folded before the merge, so a note always stores them lowercase (`English` becomes
+  `english`) — a pre-existing capitalised note reads as one mismatch, is rewritten
+  lowercase on the next refresh, and then settles. The one exception is `benefits`,
+  which is replaced on update.
 - **`created` and `updated` are pipeline stamps, not source fields.** `created` is written
   when the note first appears and preserved afterwards; `updated` is advanced to the run date
   only when a source change rewrites the note (a no-op refresh changes neither). They are

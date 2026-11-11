@@ -212,7 +212,12 @@ class TestEventType(WriterTestCase):
 
 
 class TestTopicsPreserved(WriterTestCase):
-    """Existing topics accumulate; only unseen incoming topics are appended."""
+    """Existing topics accumulate; only unseen incoming topics are appended.
+
+    Matching is case-insensitive (``AI`` matches ``ai``): a
+    capitalization-only upstream change never appends, and a genuinely new
+    value keeps the first-seen spelling.
+    """
 
     def test_user_added_topic_does_not_trigger_a_rewrite(self) -> None:
         self.write_initial()
@@ -297,6 +302,35 @@ class TestTopicsPreserved(WriterTestCase):
             sample_row(
                 topics=["microsoft", "cloud", "automation", "ai", "ai"]
             ),
+        )
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(
+            self.frontmatter()["topics"],
+            ["microsoft", "cloud", "automation", "ai"],
+        )
+
+    def test_case_variant_existing_topics_do_not_rewrite(self) -> None:
+        self.write_initial()
+        before = self.path.read_bytes()
+
+        status = cw.upsert(
+            self.data,
+            sample_row(topics=["Microsoft", "CLOUD", "Automation"]),
+        )
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(
+            self.frontmatter()["topics"], ["microsoft", "cloud", "automation"]
+        )
+
+    def test_case_variant_new_topic_appends_first_seen_spelling_once(self) -> None:
+        self.write_initial()
+
+        status = cw.upsert(
+            self.data,
+            sample_row(topics=["Microsoft", "ai", "AI"]),
         )
 
         self.assertEqual(status, "updated")
@@ -919,6 +953,10 @@ class TestLanguages(WriterTestCase):
     preserved as a prefix and new incoming ones are appended, so a hand-added
     language or one the source dropped/reordered upstream does not trigger a
     rewrite. ``benefits`` is the list field that keeps replace semantics.
+
+    Values are case-folded (``English`` -> ``english``), so a note always
+    stores languages lowercase: a capitalization-only upstream change never
+    appends, and a pre-existing capitalised note is rewritten lowercase once.
     """
 
     def test_no_languages_line_when_source_has_none(self) -> None:
@@ -1033,6 +1071,65 @@ class TestLanguages(WriterTestCase):
             self.frontmatter()["languages"],
             ["english", "spanish", "french"],
         )
+
+    def test_languages_are_case_folded_on_write(self) -> None:
+        cw.upsert(self.data, sample_row(languages=["English", "FRANÇAIS", "Deutsche"]))
+        fm = self.frontmatter()
+        self.assertEqual(fm["languages"], ["english", "français", "deutsche"])
+        self.assertIn(
+            "languages: [english, français, deutsche]",
+            self.path.read_text(encoding="utf-8"),
+        )
+
+    def test_case_variant_language_does_not_rewrite_or_append(self) -> None:
+        self.assertEqual(cw.upsert(self.data, sample_row(languages=["english"])), "new")
+        before = self.path.read_bytes()
+
+        status = cw.upsert(self.data, sample_row(languages=["ENGLISH", "English"]))
+
+        self.assertEqual(status, "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.frontmatter()["languages"], ["english"])
+
+    def test_capitalised_note_is_case_folded_on_the_next_refresh(self) -> None:
+        # A note from before folding (or hand-edited) carries the capitals:
+        # it reads as one mismatch, is rewritten lowercase once, then settles.
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-06"),
+            "new",
+        )
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.edit("languages: [spanish]", "languages: [Spanish]")
+
+        status = cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-09")
+
+        self.assertEqual(status, "updated")
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["languages"], ["spanish"])
+        self.assertIn("languages: [spanish]", self.path.read_text(encoding="utf-8"))
+
+    def test_capitalised_note_is_case_folded_by_normalize_without_advancing_stamps(
+        self,
+    ) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-06"),
+            "new",
+        )
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.edit("languages: [spanish]", "languages: [Spanish]")
+        created = self.frontmatter()["created"]
+
+        result = cw.normalize_file(self.path)
+
+        self.assertTrue(result)
+        self.assertEqual(self.frontmatter()["languages"], ["spanish"])
+        after = self.path.read_bytes()
+        # A shape pass is not a data update: stamps are preserved...
+        self.assertEqual(self.frontmatter()["created"], created)
+        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        # ...and the second pass is a no-op.
+        cw.normalize_file(self.path)
+        self.assertEqual(self.path.read_bytes(), after)
 
     def test_languages_are_preserved_by_normalize(self) -> None:
         cw.upsert(self.data, sample_row(languages=["german"]))
