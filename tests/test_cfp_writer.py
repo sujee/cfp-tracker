@@ -1407,6 +1407,68 @@ class TestFrontmatterParsing(WriterTestCase):
         self.assertEqual(self.path.read_bytes(), before)
 
 
+class TestYamlScalarQuoting(WriterTestCase):
+    """A plain value that YAML would retype must be quoted and stay a string."""
+
+    def test_number_like_topic_stays_a_string(self) -> None:
+        # The real case: "Vancouver Microsoft 365 Summit" tags itself ``365``.
+        row = sample_row(topics=["microsoft", "365", "summit"])
+        cw.upsert(self.data, row)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn('topics: [microsoft, "365", summit]', text)
+        topics = self.frontmatter()["topics"]
+        self.assertEqual(topics, ["microsoft", "365", "summit"])
+        self.assertTrue(all(isinstance(t, str) for t in topics))
+
+    def test_quoted_number_like_topic_is_unchanged_on_refresh(self) -> None:
+        row = sample_row(topics=["microsoft", "365", "summit"])
+        cw.upsert(self.data, row)
+        mtime = self.path.stat().st_mtime_ns
+        self.assertEqual(cw.upsert(self.data, row), "unchanged")
+        self.assertEqual(self.path.stat().st_mtime_ns, mtime)
+
+    def test_yaml_retyped_scalars_are_quoted(self) -> None:
+        for value, expected in [
+            ("365", '"365"'),
+            ("2026", '"2026"'),
+            ("1.0", '"1.0"'),
+            ("1:30", '"1:30"'),  # YAML 1.1 sexagesimal -> 90
+            ("yes", '"yes"'),
+            ("on", '"on"'),
+            ("null", '"null"'),
+            ("~", '"~"'),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(cw._yaml_str(value), expected)
+
+    def test_plain_strings_stay_unquoted(self) -> None:
+        for value in ["microsoft", "365 days", "Power 365 Summit", "AI.2026", "v1.0.0"]:
+            with self.subTest(value=value):
+                self.assertEqual(cw._yaml_str(value), value)
+
+    def test_iso_dates_stay_unquoted(self) -> None:
+        # Obsidian maps the unquoted form to a date property; quoting it would
+        # turn event_date/cfp_close/created/updated into text.
+        row = sample_row(topics=["365"])
+        cw.upsert(self.data, row)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("event_date: 2026-12-19", text)
+        self.assertIn("cfp_close: 2026-11-30", text)
+        self.assertNotIn('event_date: "', text)
+        self.assertNotIn('cfp_close: "', text)
+        self.assertNotIn('created: "', text)
+        self.assertNotIn('updated: "', text)
+
+    def test_number_like_name_is_quoted_and_round_trips(self) -> None:
+        row = sample_row(name="2026", topics=[])
+        cw.upsert(self.data, row)
+        path = cw.note_path(self.data, row)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn('name: "2026"', text)
+        fm, _ = cw._read_frontmatter(path)
+        self.assertEqual(fm["name"], "2026")
+
+
 class TestCfpTemplate(unittest.TestCase):
     """The vault's ``templates/cfp-template.md`` must match what the writer emits.
 

@@ -144,7 +144,12 @@ not overwrite a note you wrote by hand.
 
 Quoting: every value is emitted through `cfp_writer._yaml_str` (and `_yaml_list` for `topics`,
 `benefits` and `languages`), so names containing `": "`, quotes, leading indicators, or newlines
-are double-quoted and stay valid YAML. `shortlist` is written as a bare `true`/`false` boolean.
+are double-quoted and stay valid YAML. A value YAML would otherwise retype is quoted too —
+`365`, `2026`, `1.0`, `yes`, `null` resolve to int/float/bool/null, so a topic `365` is written
+`"365"` and reads back as a string (`_yaml_reads_as_non_string`). ISO dates are the deliberate
+exception: `event_date`, `cfp_close`, `created` and `updated` stay unquoted so PyYAML types them
+as dates and Obsidian maps them to its date property; `_as_str` turns them back into
+`YYYY-MM-DD`. `shortlist` is written as a bare `true`/`false` boolean.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 

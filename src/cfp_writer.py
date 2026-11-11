@@ -290,12 +290,41 @@ def _is_plain_safe(s: str, flow: bool = False) -> bool:
     return True
 
 
+# ISO dates/datetimes are deliberately left unquoted: PyYAML reads them as
+# ``datetime.date`` and Obsidian maps the unquoted form to its date property
+# type, which ``event_date``/``cfp_close``/``created``/``updated`` rely on.
+# ``_as_str`` turns them back into ``YYYY-MM-DD`` on read, so the round-trip is
+# lossless.
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ].*)?")
+
+
+def _yaml_reads_as_non_string(s: str) -> bool:
+    """True when YAML would read the plain scalar *s* as anything but a string.
+
+    ``365``, ``2026``, ``1.0``, ``yes``/``on``, ``null`` and sexagesimals like
+    ``1:30`` all resolve to int / float / bool / None, so they must be quoted or
+    the value silently changes type — a topic ``365`` comes back from the note
+    as a number. ISO dates are exempt (see ``_ISO_DATE_RE``).
+    """
+    if _ISO_DATE_RE.fullmatch(s):
+        return False
+    try:
+        return not isinstance(yaml.safe_load(s), str)
+    except yaml.YAMLError:  # not a valid plain scalar at all -> quote it
+        return True
+
+
 def _yaml_str(value, flow: bool = False) -> str:
-    """Render *value* as a safe YAML scalar, quoting only when needed."""
+    """Render *value* as a safe YAML scalar, quoting only when needed.
+
+    Quoted when the plain form would not read back as the same string: YAML
+    indicators, flow-collection characters, and anything YAML would resolve to
+    a number / bool / null (``365`` -> ``"365"``). ISO dates stay plain.
+    """
     s = "" if value is None else str(value)
     if s == "":
         return '""'
-    if _is_plain_safe(s, flow=flow):
+    if _is_plain_safe(s, flow=flow) and not _yaml_reads_as_non_string(s):
         return s
     # JSON double-quoted strings are valid YAML and escape newlines/quotes.
     return json.dumps(s, ensure_ascii=False)
