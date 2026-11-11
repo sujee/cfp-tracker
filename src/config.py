@@ -14,7 +14,7 @@ TOPICS = {
     "developer-conference",
     "genai",
     "generative-ai",
-    "kubernetes"
+    "kubernetes",
     "llm",
     "llms",
     "local llms",
@@ -31,16 +31,12 @@ TOPICS = {
     "open-weight",
     "opensource",
     "python",
+    "physical.ai",
     "programming",
     "robotics",
     "software-development",
     "software-engineering"
 }
-
-# Normalised (lower, hyphens/spaces collapsed) lookup set.
-TOPICS_NORMALIZED = {t.lower().replace(" ", "-").replace("_", "-") for t in TOPICS}
-TOPICS_NORMALIZED |= {t.lower().replace("-", " ") for t in TOPICS}
-TOPICS_NORMALIZED |= {t.lower().replace(" ", "") for t in TOPICS}
 
 # Blacklist: drop any conference whose name/topics contain these terms.
 IGNORE_TOPICS = [
@@ -48,6 +44,13 @@ IGNORE_TOPICS = [
     "crypto",
     "mobile",
 ]
+
+
+# Normalised (lower, hyphens/spaces collapsed) lookup set.
+TOPICS_NORMALIZED = {t.lower().replace(" ", "-").replace("_", "-") for t in TOPICS}
+TOPICS_NORMALIZED |= {t.lower().replace("-", " ") for t in TOPICS}
+TOPICS_NORMALIZED |= {t.lower().replace(" ", "") for t in TOPICS}
+
 
 IGNORE_TOPICS_NORMALIZED = {t.lower().replace(" ", "-") for t in IGNORE_TOPICS}
 
