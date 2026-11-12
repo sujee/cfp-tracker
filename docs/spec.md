@@ -1126,11 +1126,13 @@ Other 2xx statuses count as not-200. A 403 or 429 response means blocked/rate-li
 type == "cfp"
 ```
 
-Its `Event` formula links to `file.path`, displaying `event_name` when truthy and otherwise `file.name`.
+Its `Event` formula links to `file.path`, displaying `event_name` when truthy and otherwise `file.name`. Its `submission_count` formula evaluates `list(submissions).length` and appears as **Submissions** in the Submitted view.
 
-Data views use the path-suffix predicate `formula.is_in_data`. Every view has **(+dismissed)** and **(-dismissed)** versions. The plus version includes dismissed notes. The minus version hides them. Standard data views use `formula.is_live`, while their plus variants use `formula.is_in_data`. Archived follows the same naming pattern. **Dismissed (-dismissed)** is empty by definition.
+Most data views have **(+dismissed)** and **(-dismissed)** versions. The plus version includes dismissed notes through `formula.is_in_data`. The minus version hides them through `formula.is_live`. Short listed and Submitted are single views that include dismissed notes. Dismissed is a single view of dismissed data notes. Archived is a single view that includes dismissed archived notes.
 
 Folder filtering is per-view because the global filter ANDs with each view. A global data-folder restriction would blank Archived. The `data_dir` and `archived_dir` formulas hold the configurable path suffixes.
+
+The `my_country` formula holds the canonical country value for the user's country views. The `is_local_area` formula holds the location-substring predicate for the local-area views. Both personal settings live in the base's `formulas` section because Obsidian does not read the Python configuration.
 
 ### 15.2 Base views
 
@@ -1139,25 +1141,23 @@ Folder filtering is per-view because the global filter ANDs with each view. A gl
 | **All (-dismissed)** | Every non-dismissed CFP note under the configured data path. No deadline restriction. |
 | **All (+dismissed)** | Every CFP note under the configured data path, including dismissed notes. |
 | **Recently Updated (+/-dismissed)** | Data notes sorted by `updated` descending. The plus variant includes dismissed notes; the minus variant excludes them. |
-| **Short listed (-dismissed)** | Non-dismissed data notes with `shortlist == true`. No deadline restriction. |
-| **Submitted (-dismissed)** | Non-dismissed data notes where `list(submissions).length > 0`. No deadline restriction. |
+| **Short listed** | All data notes with `shortlist == true`, including dismissed notes. No Dismissed column or deadline restriction. |
+| **Submitted** | All data notes where `list(submissions).length > 0`, including dismissed notes. Shows the submission count and no Dismissed column. No deadline restriction. |
 | **Upcoming (> -30 days) (-dismissed)** | `cfp_close >= today() - "30d"`. Includes that cutoff day and all future deadlines. |
 | **Upcoming (> today) (-dismissed)** | `cfp_close >= today()`. Inclusive despite the label's `>`. |
 | **Closed (90d) (-dismissed)** | `cfp_close < today() - "30d"` and `>= today() - "90d"`. |
-| **Location - USA (-dismissed)** | `country == "USA"`. |
-| **Location - Out of USA (-dismissed)** | `country != "USA"`. Includes online and empty or unknown country values. |
+| **Location - My Country (-dismissed)** | `country == formula.my_country`. |
+| **Location - Outside My Country (-dismissed)** | `country != formula.my_country`. Includes online and empty or unknown country values. |
 | **Location - Online (-dismissed)** | `country == "Online"`. |
-| **Location - Local (-dismissed)** | Any configured Bay Area location substring matches. |
-| **Dismissed (+dismissed)** | Dismissed notes under the configured data path. |
-| **Dismissed (-dismissed)** | Empty by definition because the filters require both dismissal states. |
-| **Archived (-dismissed)** | Non-dismissed notes under the configured archived path. Sorted by deadline descending. |
-| **Archived (+dismissed)** | All notes under the configured archived path. Sorted by deadline descending. |
+| **Location - My Local Area (-dismissed)** | `formula.is_local_area` matches. |
+| **Dismissed** | Dismissed notes under the configured data path. |
+| **Archived** | All notes under the configured archived path, including dismissed notes. Sorted by deadline descending. |
 
-For regular data views and Archived, the plus and minus versions differ only in dismissal filtering. Regular data views sort `cfp_close` ascending, except Recently Updated sorts `updated` descending. Archived sorts `cfp_close` descending.
+For paired regular data views, the plus and minus versions differ only in dismissal filtering. Regular data views sort `cfp_close` ascending, except Recently Updated sorts `updated` descending. Archived sorts `cfp_close` descending.
 
-The Location - Local substring list currently covers San Francisco, San Jose, Oakland, Berkeley, Santa Clara, Sunnyvale, Palo Alto, Mountain View, Cupertino, Redwood, Menlo Park, San Mateo, Milpitas, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, and Bay Area.
+The default `is_local_area` substring list covers San Francisco, San Jose, Oakland, Berkeley, Santa Clara, Sunnyvale, Palo Alto, Mountain View, Cupertino, Redwood, Menlo Park, San Mateo, Milpitas, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, and Bay Area. Users edit this one formula to change both local-area views.
 
-Most views display a common set of CFP properties. Every view shows `shortlist` followed immediately by `dismissed` after `cfp_close`. No view displays `benefits` or `submissions`. Submitted views still filter on submission data. Upcoming (> today) additionally includes `languages`; Recently Updated adds `updated` after `dismissed`.
+Most views display a common set of CFP properties. Short listed and Submitted omit the `dismissed` column; other views show it immediately after `shortlist`. Submitted shows `formula.submission_count` after `shortlist`. No view displays `benefits` or the raw `submissions` list. Upcoming (> today) additionally includes `languages`; Recently Updated adds `updated` after `dismissed`.
 
 ### 15.3 Dataview dashboard
 

@@ -102,6 +102,11 @@ Copy [`cfps.base`](cfps.base) into your vault. Copy
 The base reads notes from `data/`. The archive views read notes from `archived/`. If your notes use
 different folders, update the paths in both files.
 
+Personalize the location views in the `formulas` section of `cfps.base`:
+
+- Set `my_country` to the canonical `country` value for your notes.
+- Edit `is_local_area` to list your local cities and area names.
+
 ## Typical workflow:
 
 1. Refresh the CFPs.
@@ -114,8 +119,7 @@ Most views let you include or exclude dismissed notes.
 
 ## Conference 'prestige'
 
-[`prestige.md`](prestige.md) assigns optional reputation tiers. Tier 1 means flagship, tier 2 means
-major, and tier 3 means notable. The refresh adds these tiers to matching notes.
+[`prestige.md`](prestige.md) assigns optional reputation tiers. Tier 1 means flagship, tier 2 means major, and tier 3 means notable. The refresh adds these tiers to matching notes.
 
 A tier describes the conference. Your shortlist describes your interest.
 
@@ -126,14 +130,7 @@ uv run python src/apply-prestige.py --check
 
 ## Sources
 
-The pipeline reads:
-
-- **developers.events** for live CFP and event JSON.
-- **cfp.ninja** for CFPs, locations, topics, and speaker benefits.
-- **confs.tech** for community conference data.
-- **adato-tracker** for additional CFPs from Leon Adato's tracker.
-- **Open Tech CFPs** for open and recently closed CFPs. Its data uses CC BY 4.0.
-- **Manual input** for tables and checklists from your configured `input/` files.
+The pipeline reads from various sources.
 
 See [`docs/cfp-sources.md`](docs/cfp-sources.md) for source details and attribution.
 

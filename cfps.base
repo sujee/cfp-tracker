@@ -3,11 +3,38 @@ filters:
     - type == "cfp"
 formulas:
   cfp_title: link(file.path, if(event_name, event_name, file.name))
+  submission_count: 'list(submissions).length'
   # Folder constants — the match is a suffix, so these work whether your vault
   # stores the notes at `cfps/data` or at `30-speaking-talks/cfps/data`.
   # Change them only if the folders themselves are named differently.
   data_dir: '"cfps/data/"'
   archived_dir: '"cfps/archived/"'
+  # Personal location settings for the My Country and My Local Area views.
+  # Use the canonical country value from your notes, such as "USA" or "UK".
+  my_country: '"USA"'
+  # Add or remove location.contains(...) clauses to define your local area.
+  is_local_area: >-
+    location.contains("San Francisco") ||
+    location.contains("San Jose") ||
+    location.contains("Oakland") ||
+    location.contains("Berkeley") ||
+    location.contains("Santa Clara") ||
+    location.contains("Sunnyvale") ||
+    location.contains("Palo Alto") ||
+    location.contains("Mountain View") ||
+    location.contains("Cupertino") ||
+    location.contains("Redwood") ||
+    location.contains("Menlo Park") ||
+    location.contains("San Mateo") ||
+    location.contains("Milpitas") ||
+    location.contains("Fremont") ||
+    location.contains("Hayward") ||
+    location.contains("Emeryville") ||
+    location.contains("Los Altos") ||
+    location.contains("Los Gatos") ||
+    location.contains("Pleasanton") ||
+    location.contains("Livermore") ||
+    location.contains("Bay Area")
   # The predicates every view below filters on, so no view repeats a path.
   is_in_data: '("/" + file.path).contains("/" + formula.data_dir)'
   is_archived: '("/" + file.path).contains("/" + formula.archived_dir)'
@@ -19,6 +46,8 @@ formulas:
 properties:
   formula.cfp_title:
     displayName: Event
+  formula.submission_count:
+    displayName: Submissions
   dismissed:
     displayName: Dismissed
   shortlist:
@@ -217,7 +246,7 @@ views:
       - property: updated
         direction: DESC
   - type: table
-    name: Short listed (+dismissed)
+    name: Short listed
     filters:
       and:
         - shortlist == true
@@ -226,7 +255,6 @@ views:
       - cfp_close
       - tier
       - shortlist
-      - dismissed
       - formula.cfp_title
       - event_date
       - location
@@ -238,28 +266,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Short listed (-dismissed)
-    filters:
-      and:
-        - shortlist == true
-        - 'formula.is_live'
-    order:
-      - cfp_close
-      - tier
-      - shortlist
-      - dismissed
-      - formula.cfp_title
-      - event_date
-      - location
-      - topics
-      - source
-      - event_url
-      - cfp_url
-    sort:
-      - property: cfp_close
-        direction: ASC
-  - type: table
-    name: Submitted (+dismissed)
+    name: Submitted
     filters:
       and:
         - list(submissions).length > 0
@@ -268,35 +275,7 @@ views:
       - cfp_close
       - tier
       - shortlist
-      - dismissed
-      - formula.cfp_title
-      - event_date
-      - location
-      - topics
-      - source
-      - event_url
-      - cfp_url
-    sort:
-      - property: cfp_close
-        direction: ASC
-    columnSize:
-      note.cfp_close: 129
-      formula.cfp_title: 274
-      note.location: 159
-      note.topics: 181
-      note.event_url: 153
-      note.cfp_url: 169
-  - type: table
-    name: Submitted (-dismissed)
-    filters:
-      and:
-        - list(submissions).length > 0
-        - 'formula.is_live'
-    order:
-      - cfp_close
-      - tier
-      - shortlist
-      - dismissed
+      - formula.submission_count
       - formula.cfp_title
       - event_date
       - location
@@ -461,10 +440,10 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Location - USA (+dismissed)
+    name: Location - My Country (+dismissed)
     filters:
       and:
-        - country == "USA"
+        - country == formula.my_country
         - 'formula.is_in_data'
     order:
       - cfp_close
@@ -482,10 +461,10 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Location - USA (-dismissed)
+    name: Location - My Country (-dismissed)
     filters:
       and:
-        - country == "USA"
+        - country == formula.my_country
         - 'formula.is_live'
     order:
       - cfp_close
@@ -503,10 +482,10 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Location - Out of USA (+dismissed)
+    name: Location - Outside My Country (+dismissed)
     filters:
       and:
-        - country != "USA"
+        - country != formula.my_country
         - 'formula.is_in_data'
     order:
       - cfp_close
@@ -524,10 +503,10 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Location - Out of USA (-dismissed)
+    name: Location - Outside My Country (-dismissed)
     filters:
       and:
-        - country != "USA"
+        - country != formula.my_country
         - 'formula.is_live'
     order:
       - cfp_close
@@ -593,32 +572,11 @@ views:
       note.event_date: 139
       note.location: 127
   - type: table
-    name: Location - Local (+dismissed)
+    name: Location - My Local Area (+dismissed)
     filters:
       and:
         - 'formula.is_in_data'
-        - or:
-            - location.contains("San Francisco")
-            - location.contains("San Jose")
-            - location.contains("Oakland")
-            - location.contains("Berkeley")
-            - location.contains("Santa Clara")
-            - location.contains("Sunnyvale")
-            - location.contains("Palo Alto")
-            - location.contains("Mountain View")
-            - location.contains("Cupertino")
-            - location.contains("Redwood")
-            - location.contains("Menlo Park")
-            - location.contains("San Mateo")
-            - location.contains("Milpitas")
-            - location.contains("Fremont")
-            - location.contains("Hayward")
-            - location.contains("Emeryville")
-            - location.contains("Los Altos")
-            - location.contains("Los Gatos")
-            - location.contains("Pleasanton")
-            - location.contains("Livermore")
-            - location.contains("Bay Area")
+        - 'formula.is_local_area'
     order:
       - cfp_close
       - tier
@@ -641,32 +599,11 @@ views:
       note.cfp_url: 253
       note.event_url: 212
   - type: table
-    name: Location - Local (-dismissed)
+    name: Location - My Local Area (-dismissed)
     filters:
       and:
         - 'formula.is_live'
-        - or:
-            - location.contains("San Francisco")
-            - location.contains("San Jose")
-            - location.contains("Oakland")
-            - location.contains("Berkeley")
-            - location.contains("Santa Clara")
-            - location.contains("Sunnyvale")
-            - location.contains("Palo Alto")
-            - location.contains("Mountain View")
-            - location.contains("Cupertino")
-            - location.contains("Redwood")
-            - location.contains("Menlo Park")
-            - location.contains("San Mateo")
-            - location.contains("Milpitas")
-            - location.contains("Fremont")
-            - location.contains("Hayward")
-            - location.contains("Emeryville")
-            - location.contains("Los Altos")
-            - location.contains("Los Gatos")
-            - location.contains("Pleasanton")
-            - location.contains("Livermore")
-            - location.contains("Bay Area")
+        - 'formula.is_local_area'
     order:
       - cfp_close
       - tier
@@ -689,7 +626,7 @@ views:
       note.cfp_url: 253
       note.event_url: 212
   - type: table
-    name: Dismissed (+dismissed)
+    name: Dismissed
     filters:
       and:
         - 'formula.is_in_data'
@@ -710,53 +647,10 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Dismissed (-dismissed)
-    filters:
-      and:
-        - 'formula.is_in_data'
-        - 'formula.is_dismissed'
-        - '!formula.is_dismissed'
-    order:
-      - cfp_close
-      - tier
-      - shortlist
-      - dismissed
-      - formula.cfp_title
-      - event_date
-      - location
-      - topics
-      - source
-      - event_url
-      - cfp_url
-    sort:
-      - property: cfp_close
-        direction: ASC
-  - type: table
-    name: Archived (+dismissed)
+    name: Archived
     filters:
       and:
         - formula.is_archived
-    order:
-      - cfp_close
-      - tier
-      - shortlist
-      - dismissed
-      - formula.cfp_title
-      - event_date
-      - location
-      - topics
-      - source
-      - event_url
-      - cfp_url
-    sort:
-      - property: cfp_close
-        direction: DESC
-  - type: table
-    name: Archived (-dismissed)
-    filters:
-      and:
-        - formula.is_archived
-        - '!formula.is_dismissed'
     order:
       - cfp_close
       - tier

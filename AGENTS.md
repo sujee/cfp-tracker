@@ -128,6 +128,7 @@ Everything an agent needs is here, deliberately:
 - `docs/cfp-sources.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
+- `cfps.base` — Obsidian views; personal country and local-area predicates live in `formulas`.
 - `README.md` — overview and the source list.
 - `tests/` — stdlib `unittest` suite for the writer, the run summary, and all six parsers
   (`python3 -m unittest discover -s tests -v`); fixtures under `tests/fixtures/` are real
@@ -280,10 +281,11 @@ currently change nothing the base reads. Kept for reference / if the report retu
   new behaviour. Fixtures are real slices of the downloaded data under `tests/fixtures/`.
 - **Dropped events are archived, not left behind.** `process-all.py` moves any `type: cfp` note
   under `data/` that **no** source produced this run into `archived/` (byte-for-byte: nothing
-  edited or deleted). Each `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
-  notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Archived** has the same
-  pair of variants. **Dismissed (-dismissed)** is empty by definition. Folder filters are per-view
-  because the base's top-level filter ANDs with every view, so a global
+  edited or deleted). Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
+  notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Short listed** and
+  **Submitted** are single views without dismissal filtering or a Dismissed column; Submitted also
+  shows `formula.submission_count`. **Dismissed** and **Archived** are single views that include
+  dismissed notes. Folder filters are per-view because the base's top-level filter ANDs with every view, so a global
   data-folder restriction would blank Archived. Only `type: cfp` notes are touched. Other files in
   `data/` are left alone. `--no-archive` disables archiving.
 - **`dismissed: true` is the user's "not interested" flag.** New notes and the vault template
@@ -298,7 +300,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   (`30-speaking-talks/cfps/`, base at `0-dashboard/bases/cfps.base`, dashboard at
   `0-dashboard/cfps-dashboard.md`). The dashboard's Dataview `FROM "cfps/data"` is a literal
   vault-relative folder and does **not** suffix-match, so keep it in step with the vault's own
-  copy.
+  copy. The `my_country` and `is_local_area` formulas centralize the personal location filters;
+  Obsidian reads these base formulas, not the Python configuration.
 - **Manual input reads only explicitly listed files — no `input/*.md` sweep.**
   `MANUAL_INPUT_FILES` in `src/config_local.py` lists relative file paths (usually basenames) inside `input/` and overrides the empty default; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
 - **A manual file may instead be a website checklist.** In the same explicitly listed
