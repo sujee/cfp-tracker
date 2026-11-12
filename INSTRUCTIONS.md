@@ -81,19 +81,29 @@ tests for the new behaviour**:
 
 ## Archived notes
 
-A refresh only writes the notes the sources still carry, so a dropped event would otherwise
-linger forever. Instead, any note under `data/` that no source produced this run is **moved
-byte-for-byte** into `archived/` (same `<year>/` layout). Nothing is edited or deleted — edits,
-`shortlist`, `dismissed`, and the body come along. Each live view in `cfps.base` excludes that folder and a
-separate **Archived** view matches it, so moved notes drop out of the live views and show only
-there. (The exclusion is per-view: the base's top-level filter ANDs with every view.)
+A refresh writes only the notes that the sources still carry. The archiver moves an untouched
+note into `archived/` when no source produced it during the run. The move preserves the same
+`<year>/` layout and every byte. Each live view in `cfps.base` excludes that folder. The
+**Archived** view includes it. The folder exclusion is per-view because the base's top-level
+filter ANDs with every view.
+
+The archiver checks user-curation fields before each move. It keeps the note in `data/` when it
+finds any of these values:
+
+- `shortlist: true`.
+- A nonempty `submissions` list.
+- Text in the `## Notes` body.
+- A custom frontmatter property.
+
+The `dismissed` value does not affect archiving. The registry-managed `tier` property alone does
+not prevent archiving. An untouched note moves with its fields and body unchanged.
 
 - Per-source `--manifest FILE` (JSON list of note paths) is how each parser reports what it
   produced; `src/archive-orphans.py` diffs those against `data/` and does the move. A row that
   yields to another note (`upsert` returns `"skipped"`) is **not** recorded — that is exactly what
   lets the losing duplicate be archived. Resolved event types excluded by the `EVENT_TYPES`
-  allow-list use the same skip path: they never enter data, and existing notes of those types move
-  to `archived/`. `upsert_counted` (in `src/cfp_writer.py`) does this bookkeeping for every parser.
+  allow-list use the same skip path: they never enter data. Untouched existing notes of those
+  types move to `archived/`. `upsert_counted` does this bookkeeping for every parser.
 - Only notes with `type: cfp` belong in `data/`; anything else is yours, not the pipeline's.
 - `python3 src/archive-orphans.py --dry-run` lists what *would* move, without moving.
 
@@ -124,7 +134,7 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   `ValueError` before source or archive steps run.
 - `IGNORE_NAMES` in `src/config_local.py` overrides the default list and drops any event whose name contains a configured string. Matching
   ignores case and applies anywhere in the name, not only at the start. The writer enforces this for
-  every source before creating or rewriting a note. Skipped rows enter no manifest and archive normally.
+  every source before creating or rewriting a note. Skipped rows enter no manifest. Untouched notes archive normally.
   Invalid settings raise `ValueError`. `IGNORE_TOPICS` separately filters adapter-level name/topic terms.
 - `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
   first-seen date and is preserved. `updated` advances to the run date whenever a source change

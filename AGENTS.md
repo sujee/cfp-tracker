@@ -233,7 +233,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   (currently `conference`, `summit`, `workshop`; the missing-config fallback enables every
   controlled type except `meetup`). After the sticky/inferred type is resolved, `upsert` returns
   `skipped` for a disallowed type before any URL dedupe or write. New excluded events create no
-  note, and existing ones are omitted from manifests and archived byte-for-byte. An explicit
+  note. Existing ones are omitted from manifests and archived byte-for-byte unless they contain
+  user curation. An explicit
   allowed override remains sticky. The CFP-URL index ignores excluded notes so they cannot block
   replacements. Empty lists and unknown type names raise `ValueError` before any source or archive
   subprocess instead of silently archiving broadly.
@@ -242,7 +243,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
   entry in the example/local configuration therefore rejects both `.NET Conf` and
   `Azure .NET Developer Days`. The check runs before
   note-path creation, event-type inference, and URL deduplication. Skipped rows enter no manifest, so
-  existing notes archive normally. Empty or non-string settings fail without writing a note.
+  untouched existing notes archive normally. Empty or non-string settings fail without writing a note.
   `IGNORE_TOPICS` remains a separate, adapter-level name/topic/tag filter.
 - **`topics` and `languages` are cumulative, not replaced.** `_merge_list` keeps the existing list verbatim
   as a prefix and appends only incoming values not already present (case-insensitive
@@ -279,9 +280,12 @@ currently change nothing the base reads. Kept for reference / if the report retu
   (stdlib only) covers the change detection and preservation rules. Any `src/` edit must keep
   the suite passing — update tests whose expectations legitimately changed, and add tests for
   new behaviour. Fixtures are real slices of the downloaded data under `tests/fixtures/`.
-- **Dropped events are archived, not left behind.** `process-all.py` moves any `type: cfp` note
-  under `data/` that **no** source produced this run into `archived/` (byte-for-byte: nothing
-  edited or deleted). Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
+- **Dropped events are archived, not left behind.** `process-all.py` moves an untouched `type: cfp`
+  note into `archived/` when **no** source produced it during the run. Before each move, the
+  archiver compares user-curation fields with their generated defaults. It retains a note with
+  `shortlist: true`, a submission, body notes, or custom frontmatter. A
+  registry-managed `tier` alone does not prevent archiving. Eligible notes move byte-for-byte.
+  Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
   notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Short listed** and
   **Submitted** are single views without dismissal filtering or a Dismissed column; Submitted also
   shows `formula.submission_count`. **Dismissed** and **Archived** are single views that include

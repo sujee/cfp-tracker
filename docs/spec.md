@@ -1023,9 +1023,14 @@ Recursively scan sorted `*.md` files below the live data directory:
 1. If the data-relative POSIX path is in the produced set, keep it without parsing.
 2. Otherwise parse its frontmatter.
 3. Leave the file alone when frontmatter is invalid, absent, empty, or `type` does not normalize to exact string `cfp`.
-4. Classify every remaining CFP note as an orphan.
+4. Leave the file alone when its `source` belongs to a source skipped through `--skip-source`.
+5. Keep the file when `shortlist` is true. The `dismissed` value does not affect archiving.
+6. Keep the file when `submissions` is nonempty or the notes body contains text.
+7. Keep the file when custom frontmatter exists.
+8. Treat `tier` as registry-managed rather than custom frontmatter. A `tier` value alone does not prevent archiving.
+9. Classify every remaining CFP note as an orphan.
 
-Malformed CFP notes are deliberately not archived; they remain where they are for manual repair.
+Malformed CFP notes remain in the live tree for manual repair. Notes with user curation also remain in the live tree.
 
 ### 12.2 Move behavior
 
@@ -1060,7 +1065,7 @@ python3 src/archive-orphans.py \
 - `--json` prints only the moved/would-move relative paths as indented JSON.
 - Normal output reports `archived N note(s)` or `would archive N note(s)` and lists each path.
 
-With no produced paths, every parseable `type: cfp` note in the live tree is considered an orphan.
+With no produced paths, every eligible parseable `type: cfp` note in the live tree is considered an orphan. The curation checks above still apply.
 
 ## 13. Existing-note normalization
 
@@ -1277,7 +1282,7 @@ The following are properties of the inspected code, not necessarily intended lon
 - A later source failure stops archiving but leaves earlier writes in place.
 - confs.tech can log and skip failed listings/files, then produce a successful but incomplete manifest.
 - Missing manifests are ignored by the archiver.
-- An empty produced set archives every parseable CFP note.
+- An empty produced set archives every parseable CFP note without user curation.
 - Manual source omission due to a missing input directory can make manual-only notes appear unproduced.
 - Archive destination collisions are not checked before `rename`; platform rename semantics apply, and an existing destination may be replaced.
 - Cross-filesystem or permission errors can interrupt archiving partway through.

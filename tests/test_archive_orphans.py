@@ -94,10 +94,47 @@ class TestFindOrphans(ArchiveTestCase):
         self.assertEqual(arch.find_orphans(self.data, set()), ["2026/a.md"])
 
 
+class TestManualChanges(ArchiveTestCase):
+    def test_user_curation_is_not_archived(self) -> None:
+        notes = {
+            "2026/shortlisted.md": "---\ntype: cfp\nshortlist: true\n---\n\n## Notes\n",
+            "2026/submitted.md": '---\ntype: cfp\nsubmissions: ["[[My talk]]"]\n---\n\n## Notes\n',
+            "2026/body-notes.md": "---\ntype: cfp\n---\n\n## Notes\n\nBring the demo.\n",
+            "2026/custom-field.md": "---\ntype: cfp\npriority: high\n---\n\n## Notes\n",
+        }
+        for rel, text in notes.items():
+            self.note(rel, text)
+
+        moved = arch.archive_orphans(self.data, self.archive, set())
+
+        self.assertEqual(moved, [])
+        for rel in notes:
+            self.assertTrue((self.data / rel).is_file())
+            self.assertFalse((self.archive / rel).exists())
+
+    def test_default_curation_values_do_not_block_archiving(self) -> None:
+        self.note(
+            "2026/untouched.md",
+            "---\ntype: cfp\nshortlist: false\ndismissed: false\n"
+            "submissions: []\n---\n\n## Notes\n\n_Add notes here._\n",
+        )
+        self.assertEqual(arch.find_orphans(self.data, set()), ["2026/untouched.md"])
+
+    def test_dismissed_note_can_be_archived(self) -> None:
+        self.note("2026/dismissed.md", "---\ntype: cfp\ndismissed: true\n---\n\n## Notes\n")
+        moved = arch.archive_orphans(self.data, self.archive, set())
+        self.assertEqual(moved, ["2026/dismissed.md"])
+        self.assertTrue((self.archive / "2026/dismissed.md").is_file())
+
+    def test_registry_tier_alone_does_not_block_archiving(self) -> None:
+        self.note("2026/tiered.md", "---\ntype: cfp\ntier: 1\n---\n\n## Notes\n")
+        self.assertEqual(arch.find_orphans(self.data, set()), ["2026/tiered.md"])
+
+
 class TestArchiveOrphans(ArchiveTestCase):
     def test_moves_orphan_and_leaves_produced(self) -> None:
         self.note("2026/keep.md")
-        self.note("2026/drop.md", "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n\nmine\n")
+        self.note("2026/drop.md", "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n\n")
 
         moved = arch.archive_orphans(self.data, self.archive, {"2026/keep.md"})
 
@@ -108,7 +145,7 @@ class TestArchiveOrphans(ArchiveTestCase):
         self.assertTrue(dst.is_file())
 
     def test_move_is_byte_identical_no_property_added(self) -> None:
-        text = "---\ntype: cfp\nname: Drop\nshortlist: true\n---\n\n## Notes\n\nmy notes\n"
+        text = "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n\n_Add notes here._\n"
         self.note("2026/drop.md", text)
         arch.archive_orphans(self.data, self.archive, set())
         moved_text = (self.archive / "2026/drop.md").read_text(encoding="utf-8")

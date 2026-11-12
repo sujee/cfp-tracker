@@ -8,7 +8,10 @@ files) and, for every other ``.md`` under ``--data``, moves it into ``--archive`
 (keeping the ``<year>/`` layout). ``cfps.base`` scopes its live views to ``data/``
 and has a separate Archived view, so moved notes simply drop out of the live views.
 
-Nothing is updated or deleted — the note file is moved byte-for-byte, edits and all.
+Nothing is updated or deleted — an untouched note file is moved byte-for-byte.
+Notes with user curation stay in ``data/``: a shortlist flag, a submission,
+body notes, or custom frontmatter. The registry-managed ``tier``
+property alone does not count as curation.
 
 Usage::
 
@@ -37,13 +40,37 @@ def load_manifests(paths) -> set[str]:
     return produced
 
 
+def has_manual_changes(fm: dict, body: str) -> bool:
+    """Return whether a note contains user curation instead of generated defaults.
+
+    These fields have known generated defaults, so the current values can be
+    compared without another copy of the note. ``tier`` is excluded because the
+    prestige registry writes it automatically.
+    """
+    from cfp_writer import (
+        KNOWN_FM_KEYS,
+        _as_bool,
+        _extract_body_notes,
+        _read_submissions,
+    )
+
+    custom_keys = set(fm) - KNOWN_FM_KEYS - {"tier"}
+    return bool(
+        _as_bool(fm.get("shortlist"))
+        or _read_submissions(fm)
+        or _extract_body_notes(body)
+        or custom_keys
+    )
+
+
 def find_orphans(data_dir: Path, produced: set[str], skip_sources=()) -> list[str]:
     """Relative paths of ``type: cfp`` notes under *data_dir* that no source produced.
 
     Non-CFP notes (anything without ``type: cfp``) are left alone — the pipeline
     only owns its own generated notes. A note whose ``source`` is one of
     *skip_sources* is also left alone: that source was deliberately not run, so
-    its notes are un-produced by choice, not dropped by upstream.
+    its notes are un-produced by choice, not dropped by upstream. A note with
+    user curation is left alone as well, before any move can occur.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cfp_writer import _read_frontmatter, _as_str, FrontmatterError
@@ -55,12 +82,14 @@ def find_orphans(data_dir: Path, produced: set[str], skip_sources=()) -> list[st
         if rel in produced:
             continue
         try:
-            fm, _ = _read_frontmatter(p)
+            fm, body = _read_frontmatter(p)
         except FrontmatterError:
             continue  # not ours to move
         if _as_str(fm.get("type")) != "cfp":
             continue
         if _as_str(fm.get("source")) in skipped:
+            continue
+        if has_manual_changes(fm, body):
             continue
         orphans.append(rel)
     return orphans
