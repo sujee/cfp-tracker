@@ -87,7 +87,8 @@ Everything an agent needs is here, deliberately:
 - `data/<year>/` — symlink to the per-CFP notes in the vault (what `cfps.base` reads).
 - `archived/<year>/` — symlink to notes no source produces any more, moved aside by
   `src/archive-orphans.py`; shown only in the base's Archived view.
-- `src/process-all.py` — wrapper that runs every source into `data/`.
+- `src/process-all.py` — wrapper that runs every **enabled** source (see `INPUT_SOURCES`
+  in `src/config.py`) into `data/`; skipped sources' notes are left in `data/`, not archived.
 - `src/process-developer-events.py` — developers.events fetcher (was `src/build-open-cfps.py`; that name remains as a shim).
 - `src/process-cfp-ninja.py` — cfp.ninja fetcher (public `api/v0/events`).
 - `src/process-confs-tech.py` — confs.tech fetcher.
@@ -370,6 +371,10 @@ currently change nothing the base reads. Kept for reference / if the report retu
   matches" so they do not rot. `tier` is never in `SOURCE_SCALAR_FIELDS`: it is not compared
   against source data, so stamping it does not advance `updated`, and the writer re-emits it
   verbatim as user metadata.
+- **`INPUT_SOURCES` in `src/config.py` selects which sources run.** Comment out a source to
+  skip its fetch. Its notes stay in `data/` — `archive-orphans.py --skip-source NAME` exempts
+  them — so a source can be paused without mass-archiving its notes. Unknown or empty values
+  raise `ValueError` before any source runs (same contract as `EVENT_TYPES`).
 - **`prestige.md` must not live in `input/`.** `src/process-manual-input.py` reads every
   `input/*.md` table row with five or more columns as a CFP; the ranking table would become
   conferences. It lives at the repo root, and `apply-prestige.py` finds it there.

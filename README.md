@@ -160,30 +160,26 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 ## Prestige ranking
 
 Feeds carry deadlines, not reputations, so the "is this a conference worth speaking at"
-judgement is curated by hand in [`prestige.md`](prestige.md) — a plain table:
-
-```md
-| conf name | ranking | keywords |
-| :--- | :---: | :--- |
-| FOSDEM | 1 | fosdem |
-| KubeCon + CloudNativeCon | 1 | kubecon, cloudnativecon |
-| KotlinConf | 2 | kotlinconf |
-| Voxxed Days | 3 | voxxed |
-```
-
-`python3 src/apply-prestige.py` reads it and stamps a numeric `tier` onto every note whose
-`event_name` matches a row (`1` flagship, `2` major, `3` notable). `process-all.py` runs this
-last automatically. `tier` is separate from `shortlist`: the tier is the conference's
-reputation, the shortlist is your interest.
+judgement is curated by hand in [`prestige.md`](prestige.md) — a plain table of
+`conf name | ranking | keywords`. `python3 src/apply-prestige.py` stamps a numeric `tier`
+(`1` flagship, `2` major, `3` notable) onto every note whose `event_name` matches a row;
+`process-all.py` runs it last automatically. `tier` is separate from `shortlist`: the tier
+is the conference's reputation, the shortlist is your interest.
 
 ```bash
 python3 src/apply-prestige.py --check    # per-row match counts; writes nothing
 ```
 
-`--check` is the safety net: a row that matches **nothing** is either a flagship no feed
-carries (re:Invent, Google I/O, Microsoft Build, WWDC, PyCon US, NeurIPS, USENIX ATC, GOTO…)
-or a typo. Either way it needs your attention, and a wrong keyword shows up as a count that
-is obviously too big.
+A row matching **nothing** is either a flagship no feed carries (re:Invent, Google I/O,
+Microsoft Build, WWDC, PyCon US, NeurIPS, USENIX ATC, GOTO…) or a typo; a tier-1/2 keyword
+hitting far too many notes is too broad. Both need your attention.
+
+## Selecting sources
+
+Which sources run is also configured, not hardcoded: `INPUT_SOURCES` in
+[`src/config.py`](src/config.py). Comment out a source to skip its fetch; its existing
+notes stay in `data/` (they are **not** archived, so the source can be re-enabled later).
+Unknown or empty values fail the run loudly.
 
 ## Sample Workflow
 
@@ -250,7 +246,7 @@ Details and HTTP-verified status: [`cfp-sources.md`](docs/cfp-sources.md).
 
 ## Repo layout
 
-- `src/`: the pipeline. `process-all.py` runs every source; one `process-*.py` per source; `cfp_writer.py` writes notes; `country.py`, `archive-orphans.py`, `check-links.py`, `normalize-data.py` are helpers.
+- `src/`: the pipeline. `process-all.py` runs every enabled source (`INPUT_SOURCES` in `src/config.py`); one `process-*.py` per source; `cfp_writer.py` writes notes; `country.py`, `archive-orphans.py`, `check-links.py`, `normalize-data.py` are helpers.
 - `prestige.md`: the curated conference ranking (tier 1/2/3) applied by `src/apply-prestige.py`; `src/prestige.py` is its loader/matcher.
 - `data/`, `archived/`: symlinks into the vault (gitignored; created in Quick start).
 - `input/`: hand-curated rows (highest-priority source).

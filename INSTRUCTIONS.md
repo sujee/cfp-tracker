@@ -18,7 +18,9 @@ uv run python src/process-all.py      # every source → data/   (uses the proje
 # or, with your own python + requirements installed:  python3 src/process-all.py
 ```
 
-`src/process-all.py` runs all six sources: developers.events, cfp.ninja, confs.tech,
+`src/process-all.py` runs all **enabled** sources (`INPUT_SOURCES` in `src/config.py`,
+comment out a source to skip it; its notes stay in `data/` — they are *not* archived — and
+unknown/empty values fail the run): developers.events, cfp.ninja, confs.tech,
 adato-tracker, Open Tech CFPs, and any hand-curated rows in `input/*.md`.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
@@ -177,7 +179,8 @@ file and the README in the same change.
 - `README.md` — what this folder is, and the source list.
 - `INSTRUCTIONS.md` — this file: the procedure.
 - `AGENTS.md` — the "why": data shapes, note shape, pitfalls, verification.
-- `src/process-all.py` — wrapper that runs every source into `data/`.
+- `src/process-all.py` — wrapper that runs every **enabled** source (see `INPUT_SOURCES` in
+  `src/config.py`) into `data/`; skipped sources' notes stay in `data/`.
 - `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
