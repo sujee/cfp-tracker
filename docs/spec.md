@@ -76,7 +76,8 @@ The system shall:
 | Shape normalizer | `src/normalize-data.py` + `cfp_writer.normalize_file` | Re-emit existing notes in the current shape. |
 | Link checker | `src/check-links.py` | Concurrently check HTTP links extracted from a Markdown report. |
 | Compatibility shim | `src/build-open-cfps.py` | Delegate to `process-developer-events.py`. |
-| Configuration | `src/config.py` | confs.tech topic selection, ignored terms, and discovered-topic comments. |
+| Configuration | `src/config.py` + gitignored `src/config_local.py` | Tracked defaults plus validated personal overrides; `config_local.example.py` is the template. |
+| Discovered topics | `src/discovered-topics.txt` | Generated reference list of confs.tech topic files; not used for extraction. |
 | Obsidian artifacts | `cfps.base`, `cfps-dashboard.md` | Browse and aggregate notes. |
 
 ### 3.2 Repository and vault boundary
@@ -369,7 +370,7 @@ Current external sources do not expose a standardized event-kind property. The w
 
 1. If existing frontmatter has a nonempty `event_type`, use that value and do not re-infer it. A trimmed value is re-rendered when another change rewrites the note.
 2. Otherwise, if an incoming common row explicitly supplies a nonempty `event_type`, use it. This supports curated/programmatic callers even though current adapters do not supply one.
-3. Otherwise, call `infer_event_type(name)`, which reads the ordered `EVENT_TYPE_KEYWORDS` mapping in `src/config.py`. Valid keys are `meetup`, `summit`, `workshop`, `hackathon`, and `webinar`. Each value is a nonempty list of singular phrase aliases. Matching is case-insensitive and word-bounded. Spaces and hyphens between alias words are interchangeable, and a trailing plural `s` is optional. Mapping order controls precedence. The checked-in aliases preserve the default meet-up and user-group variants.
+3. Otherwise, call `infer_event_type(name)`, which reads the ordered `EVENT_TYPE_KEYWORDS` mapping from `src/config_local.py` overrides or the defaults in `src/config.py`. Valid keys are `meetup`, `summit`, `workshop`, `hackathon`, and `webinar`. Each value is a nonempty list of singular phrase aliases. Matching is case-insensitive and word-bounded. Spaces and hyphens between alias words are interchangeable, and a trailing plural `s` is optional. Mapping order controls precedence. The checked-in aliases preserve the default meet-up and user-group variants.
 4. If no keyword matches, default to `conference`. `other` is available for manual/source curation but has no inference aliases. Neither `conference` nor `other` is a valid keyword-mapping key.
 
 Missing configuration falls back to built-in default aliases. A non-mapping setting, an unknown key, a non-list value, an empty list, or a blank/non-string alias raises `ValueError`. A change to aliases affects new and unset types only; existing values remain sticky.
@@ -601,20 +602,20 @@ Manual input has no recency filter.
 conference | summit | workshop | hackathon | webinar | other
 ```
 
-The checked-in configuration enables `conference`, `summit`, and `workshop`; other supported types are commented for optional inclusion.
+The default configuration and local example enable `conference`, `summit`, and `workshop`; a user can add other supported types in `src/config_local.py`.
 
 The writer validates and normalizes configured values on use. Unknown or empty values raise an error. Existing notes with excluded resolved types are absent from produced manifests and consequently archived, just like skipped duplicate paths.
 
 ### 10.3 Ignored terms
 
-`src/config.py` defines two independent filters:
+`src/config_local.py` can override two independent filters whose defaults in `src/config.py` are empty. The local example uses:
 
 ```text
 IGNORE_NAMES = [.NET]
 IGNORE_TOPICS = [bitcoin, crypto, frontend, javascript, mobile, dotnet]
 ```
 
-`IGNORE_NAMES` is a central writer filter. Before note-path creation, event-type inference, or URL deduplication, `upsert` case-folds the event name and each configured literal fragment. Any substring match anywhere in the name returns `skipped`. It is not restricted to the start of the name, a word boundary, or a particular source. The row produces no note and no manifest entry, so an existing note can be archived normally. The checked-in `.NET` fragment therefore matches both `.NET Conf` and `Azure .NET Developer Days`. An invalid non-list setting, a blank value, or a non-string value raises `ValueError` before that note can change.
+`IGNORE_NAMES` is a central writer filter. Before note-path creation, event-type inference, or URL deduplication, `upsert` case-folds the event name and each configured literal fragment. Any substring match anywhere in the name returns `skipped`. It is not restricted to the start of the name, a word boundary, or a particular source. The row produces no note and no manifest entry, so an existing note can be archived normally. The example `.NET` fragment therefore matches both `.NET Conf` and `Azure .NET Developer Days`. An invalid non-list setting, a blank value, or a non-string value raises `ValueError` before that note can change.
 
 Source adapters also reject configured `IGNORE_TOPICS` terms as follows:
 
@@ -808,7 +809,7 @@ Readable JSON caches are preferred indefinitely:
 
 Unreadable/invalid cached JSON triggers a network fetch. Requests use User-Agent `cfp-merge/1.0`, GitHub JSON Accept header, and a 30-second timeout.
 
-After collection, the CLI rewrites the commented discovered-topic list in `src/config.py` for reference. That discovered list is not itself used for extraction.
+After collection, the CLI writes the sorted discovered-topic list to `src/discovered-topics.txt` for reference. It does not rewrite Python source, and the discovered list is not itself used for extraction.
 
 #### Filtering and deduplication
 
@@ -1303,9 +1304,9 @@ A full wrapper `--today` is therefore not a complete historical reproducibility 
 
 A nominal refresh must not be interpreted as proof that every source was fetched live.
 
-### 17.4 Refresh can modify implementation source
+### 17.4 Refresh writes generated reference data
 
-Every confs.tech CLI run calls `update_discovered_config`, which rewrites the commented `DISCOVERED_TOPICS` block in `src/config.py`. Refresh side effects therefore include more than notes, caches, and manifests.
+Every confs.tech CLI run calls `write_discovered_topics`, which rewrites the reference-only `src/discovered-topics.txt`. It does not modify implementation source. Refresh side effects therefore include more than notes, caches, and manifests.
 
 ### 17.5 Identity changes do not preserve history automatically
 

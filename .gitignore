@@ -11,6 +11,9 @@ __pycache__/
 data
 archived
 
+# Personal configuration (copy src/config_local.example.py to create it)
+src/config_local.py
+
 # Runtime data and scratch files
 cache/
 backups/

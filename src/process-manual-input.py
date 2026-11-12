@@ -78,12 +78,10 @@ def _normalize_close(raw: str) -> str:
 
 def parse_rows(text: str) -> list[dict]:
     rows = []
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import config as _cfg
-        _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-    except Exception:
-        _IGNORE = []
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import config as _cfg
+
+    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
     for line in text.splitlines():
         if line.strip().startswith("|"):
@@ -142,7 +140,7 @@ def manual_input_files(input_dir: Path) -> list[Path]:
         if not path.is_file():
             raise FileNotFoundError(
                 f"configured manual input file not found: {path} "
-                "(fix MANUAL_INPUT_FILES in src/config.py or restore the file)"
+                "(fix MANUAL_INPUT_FILES in src/config_local.py or restore the file)"
             )
         files.append(path)
     return files

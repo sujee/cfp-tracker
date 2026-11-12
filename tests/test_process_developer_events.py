@@ -51,8 +51,15 @@ EXPECTED = {
 class TestBuildRows(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        # Fixture expectations must not depend on a developer's local config.
+        cls._original_ignore = pde._IGNORE
+        pde._IGNORE = ["mobile"]
         cls.rows = pde.build_rows(CFPS, EVENTS, CUTOFF)
         cls.by_name = {r["name"]: r for r in cls.rows}
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        pde._IGNORE = cls._original_ignore
 
     def test_keeps_the_open_cfps(self) -> None:
         self.assertEqual(set(self.by_name), EXPECTED)

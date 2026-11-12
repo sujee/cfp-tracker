@@ -32,13 +32,10 @@ API_URL = "https://cfp.ninja/api/v0/events"
 PER_PAGE = 100
 CFP_PAGE = "https://cfp.ninja/e"  # public submission page: /e/<slug>
 
-try:
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import config as _cfg
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config as _cfg
 
-    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-except Exception:
-    _IGNORE = []
+_IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
 def _fetch_page(url: str, cache_path: Path | None = None, cache_key: str | None = None):

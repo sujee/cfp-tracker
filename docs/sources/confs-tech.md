@@ -15,7 +15,7 @@ There is **no `ai` topic file** in the verified source tree. The current configu
 
 ## Integration guidance
 
-Filter `cfpEndDate` inclusively against the 30-day-default cutoff. Map `url` and `cfpUrl` to event and CFP URLs, parse `startDate`, and join nonempty city/country for display location. Despite upstream country and topic-file membership, the current normalized row deliberately writes `country: ""` and `topics: []`; the writer does not infer country from location. Ignore-term filtering uses only the event name. This source ranks below cfp.ninja and above adato-tracker. Its CLI also refreshes the commented discovered-topic list in `src/config.py`.
+Filter `cfpEndDate` inclusively against the 30-day-default cutoff. Map `url` and `cfpUrl` to event and CFP URLs, parse `startDate`, and join nonempty city/country for display location. Despite upstream country and topic-file membership, the current normalized row deliberately writes `country: ""` and `topics: []`; the writer does not infer country from location. Ignore-term filtering uses only the event name. This source ranks below cfp.ninja and above adato-tracker. Its CLI also refreshes the reference-only topic list in `src/discovered-topics.txt` without rewriting Python source.
 
 ## Evidence
 

@@ -18,11 +18,12 @@ uv run python src/process-all.py      # every source → data/   (uses the proje
 # or, with your own python + requirements installed:  python3 src/process-all.py
 ```
 
-`src/process-all.py` runs all **enabled** sources (`INPUT_SOURCES` in `src/config.py`,
-comment out a source to skip it; its notes stay in `data/` — they are *not* archived — and
-unknown/empty values fail the run): developers.events, cfp.ninja, confs.tech,
+`src/process-all.py` runs all **enabled** sources (`INPUT_SOURCES` in `src/config_local.py`,
+which overrides the defaults in `src/config.py`; copy `src/config_local.example.py` to create it).
+Remove a source from the local list to skip it; its notes stay in `data/` — they are *not* archived — and
+unknown/empty values fail the run. Sources: developers.events, cfp.ninja, confs.tech,
 adato-tracker, Open Tech CFPs, and any hand-curated rows in the files explicitly
-named in `MANUAL_INPUT_FILES` (`src/config.py`).
+named in `MANUAL_INPUT_FILES` (`src/config_local.py`).
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -109,17 +110,19 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   lowercase.
 - `event_type` is inferred for new/missing values as `conference`, `meetup`, `summit`, `workshop`,
   `hackathon`, or `webinar` (default `conference`; `other` is available for manual curation).
-  `EVENT_TYPE_KEYWORDS` in `src/config.py` controls the ordered singular aliases. Matching ignores
+  `EVENT_TYPE_KEYWORDS` in `src/config_local.py` can override the ordered singular aliases in
+  `src/config.py`. Matching ignores
   case, accepts spaces or hyphens between words, and permits a plural `s`. Existing non-empty values
   are sticky, including manual overrides. Alias changes therefore do not reclassify existing notes.
   A missing value back-fills during refresh or `normalize-data.py` without advancing a valid
   `updated` stamp. Invalid mappings or aliases raise `ValueError`.
-- `EVENT_TYPES` in `src/config.py` is the nonempty allow-list applied after type resolution.
-  The checked-in list currently enables `conference`, `summit`, and `workshop`; the writer's
+- `EVENT_TYPES` in `src/config_local.py` overrides the nonempty allow-list in `src/config.py`,
+  applied after type resolution. The default and local example lists enable
+  `conference`, `summit`, and `workshop`; the writer's
   missing-config fallback excludes only `meetup`. Excluded rows are skipped and existing notes
   archived; an allowed explicit override survives. Unknown values or an empty list raise
   `ValueError` before source or archive steps run.
-- `IGNORE_NAMES` in `src/config.py` drops any event whose name contains a configured string. Matching
+- `IGNORE_NAMES` in `src/config_local.py` overrides the default list and drops any event whose name contains a configured string. Matching
   ignores case and applies anywhere in the name, not only at the start. The writer enforces this for
   every source before creating or rewriting a note. Skipped rows enter no manifest and archive normally.
   Invalid settings raise `ValueError`. `IGNORE_TOPICS` separately filters adapter-level name/topic terms.
@@ -145,7 +148,7 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   the registry wins. A hand-set `tier` on a note that matches **no** row is kept, so a one-off
   can be ranked directly. `tier` is never compared against source data, so stamping it does not
   advance `updated`.
-- Manual input reads only the explicit `MANUAL_INPUT_FILES` list (`src/config.py`), not every
+- Manual input reads only the explicit `MANUAL_INPUT_FILES` list (`src/config_local.py`), not every
   file in `input/`. Other Markdown checklists are ignored until added to that list.
 - Do not commit or push anything to git unless asked. Always ask permission first — never
   commit or push automatically.
@@ -165,7 +168,7 @@ Merged into `data/`:
 - **Open Tech CFPs** — public `open.json` + `closed.json`, CC BY 4.0, Sessionize-derived.
   Filter `cfp_close_utc`, not `status`; map only explicit travel/accommodation coverage to benefits.
   It ranks lowest and fills gaps.
-- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`); `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`. Explicitly closed submission pages and closes before `--today` are skipped.
+- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config_local.py`); `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`. Explicitly closed submission pages and closes before `--today` are skipped.
 
 When two sources carry the same conference (same slug), the higher-priority one owns the note:
 `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`. A lower-priority source skips a note
@@ -188,7 +191,7 @@ file and the README in the same change.
 - `INSTRUCTIONS.md` — this file: the procedure.
 - `AGENTS.md` — the "why": data shapes, note shape, pitfalls, verification.
 - `src/process-all.py` — wrapper that runs every **enabled** source (see `INPUT_SOURCES` in
-  `src/config.py`) into `data/`; skipped sources' notes stay in `data/`.
+  `src/config_local.py`) into `data/`; skipped sources' notes stay in `data/`.
 - `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.

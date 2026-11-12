@@ -16,6 +16,20 @@ Keeps a set of **one note per conference** under `data/`, refreshed from public 
 (developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated files named in `MANUAL_INPUT_FILES`). The notes are the
 data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`).
 
+## Documentation style
+
+- Write `README.md` for human users. Keep it concise and focused on setup, configuration, and
+  daily tasks. Put detailed implementation rules in `INSTRUCTIONS.md`, `AGENTS.md`, or `docs/spec.md`.
+- Load the `asd-ste100` skill before rewriting documentation.
+- Use STE-flavored writing for explanatory prose. Use strict ASD-STE100 writing for procedures,
+  warnings, and instructions where a misreading has a cost.
+- Use active voice and simple tenses. Give one instruction per sentence. Keep instructions to 20
+  words or fewer per sentence and descriptions to 25 words or fewer.
+- Do not use semicolons or phrasal verbs. Use lists for three or more steps or conditions. Use the
+  same term for the same concept throughout a document.
+- Preserve technical terms, conditions, scope, and uncertainty. Do not remove required details only
+  to shorten a sentence.
+
 ## When to use
 
 - The user points at developers.events (/#/<year>/cfp) and wants the open or recently-closed
@@ -87,15 +101,19 @@ Everything an agent needs is here, deliberately:
 - `data/<year>/` — symlink to the per-CFP notes in the vault (what `cfps.base` reads).
 - `archived/<year>/` — symlink to notes no source produces any more, moved aside by
   `src/archive-orphans.py`; shown only in the base's Archived view.
+- `src/config.py` — tracked defaults plus the validated `config_local.py` loader.
+- `src/config_local.py` — personal overrides, gitignored; copy `src/config_local.example.py`
+  to create it. Unset settings inherit the defaults.
+- `src/discovered-topics.txt` — generated confs.tech topic reference; not used for extraction.
 - `src/process-all.py` — wrapper that runs every **enabled** source (see `INPUT_SOURCES`
-  in `src/config.py`) into `data/`; skipped sources' notes are left in `data/`, not archived.
+  in `src/config_local.py`) into `data/`; skipped sources' notes are left in `data/`, not archived.
 - `src/process-developer-events.py` — developers.events fetcher (was `src/build-open-cfps.py`; that name remains as a shim).
 - `src/process-cfp-ninja.py` — cfp.ninja fetcher (public `api/v0/events`).
 - `src/process-confs-tech.py` — confs.tech fetcher.
 - `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
-- `src/process-manual-input.py` — merges hand-curated `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`).
+- `src/process-manual-input.py` — merges hand-curated `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config_local.py`).
 - `src/watchlist.py` — resolves `- [Conference](url)` checklists to CFP pages and event metadata.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
@@ -187,6 +205,11 @@ currently change nothing the base reads. Kept for reference / if the report retu
 
 ## Pitfalls
 
+- **Personal configuration belongs in gitignored `src/config_local.py`.** `src/config.py`
+  contains defaults and loads local ALL_CAPS overrides at import. A setting in the local file
+  replaces its default; unset names inherit. Unknown setting names and errors in the local file
+  fail loudly rather than reverting silently. Copy `src/config_local.example.py` to create it.
+  Adapter imports deliberately do not swallow configuration errors.
 - **The source-owned fields are regenerated; everything else survives a refresh.**
   `event_name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
   `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `dismissed`,
@@ -194,7 +217,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
   Legacy `name` is a fallback for `event_name`. A rewrite removes `name`. Renaming this key alone does not advance `updated`.
 - **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`,
-  driven by the ordered `EVENT_TYPE_KEYWORDS` mapping in `src/config.py`. It supports singular
+  driven by the ordered `EVENT_TYPE_KEYWORDS` mapping, with defaults in `src/config.py` and
+  optional overrides in `src/config_local.py`. It supports singular
   aliases for `meetup`, `summit`, `workshop`, `hackathon`, and `webinar`. Mapping order controls
   precedence; aliases match case-insensitively at word boundaries, allow spaces or hyphens between
   words, and accept an optional plural `s`. The default aliases cover meet-up variants and
@@ -203,7 +227,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   itself trigger a rewrite. A missing value back-fills during `upsert` and `normalize_file` with
   return status updated when a file changes, but valid `created`/`updated` stamps stay unchanged
   unless another source property changed. Invalid mappings and aliases raise `ValueError`.
-- **Event types are controlled by an allow-list.** `src/config.py` sets a nonempty `EVENT_TYPES`
+- **Event types are controlled by an allow-list.** `src/config_local.py` can override the
+  nonempty `EVENT_TYPES` default in `src/config.py`
   (currently `conference`, `summit`, `workshop`; the missing-config fallback enables every
   controlled type except `meetup`). After the sticky/inferred type is resolved, `upsert` returns
   `skipped` for a disallowed type before any URL dedupe or write. New excluded events create no
@@ -212,8 +237,9 @@ currently change nothing the base reads. Kept for reference / if the report retu
   replacements. Empty lists and unknown type names raise `ValueError` before any source or archive
   subprocess instead of silently archiving broadly.
 - **`IGNORE_NAMES` filters literal event-name fragments, not only prefixes.** `cfp_writer.upsert`
-  case-folds each configured string and skips any row whose name contains it anywhere. The checked-in
-  `.NET` entry therefore rejects both `.NET Conf` and `Azure .NET Developer Days`. The check runs before
+  case-folds each configured string and skips any row whose name contains it anywhere. The `.NET`
+  entry in the example/local configuration therefore rejects both `.NET Conf` and
+  `Azure .NET Developer Days`. The check runs before
   note-path creation, event-type inference, and URL deduplication. Skipped rows enter no manifest, so
   existing notes archive normally. Empty or non-string settings fail without writing a note.
   `IGNORE_TOPICS` remains a separate, adapter-level name/topic/tag filter.
@@ -274,7 +300,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
   vault-relative folder and does **not** suffix-match, so keep it in step with the vault's own
   copy.
 - **Manual input reads only explicitly listed files — no `input/*.md` sweep.**
-  `MANUAL_INPUT_FILES` in `src/config.py` lists relative file paths (usually basenames) inside `input/`; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
+  `MANUAL_INPUT_FILES` in `src/config_local.py` lists relative file paths (usually basenames) inside `input/` and overrides the empty default; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
 - **A manual file may instead be a website checklist.** In the same explicitly listed
   `MANUAL_INPUT_FILES`, `- [Conference](https://event/)` bullets (also `*` / `+`) are
   watched, not searched: `src/watchlist.py` fetches that page, chooses only an explicit
@@ -399,8 +425,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   matches" so they do not rot. `tier` is never in `SOURCE_SCALAR_FIELDS`: it is not compared
   against source data, so stamping it does not advance `updated`, and the writer re-emits it
   verbatim as user metadata.
-- **`INPUT_SOURCES` in `src/config.py` selects which sources run.** Comment out a source to
-  skip its fetch. Its notes stay in `data/` — `archive-orphans.py --skip-source NAME` exempts
+- **`INPUT_SOURCES` in `src/config_local.py` selects which sources run.** Remove a source from
+  the local list to skip its fetch. Its notes stay in `data/` — `archive-orphans.py --skip-source NAME` exempts
   them — so a source can be paused without mass-archiving its notes. Unknown or empty values
   raise `ValueError` before any source runs (same contract as `EVENT_TYPES`).
 - **`prestige.md` stays at the repo root** (and `apply-prestige.py` finds it there). The manual source reads only `MANUAL_INPUT_FILES`, so do not add the prestige list there either — it is a ranking table, not a CFP row.

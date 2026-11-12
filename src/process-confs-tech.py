@@ -49,16 +49,13 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
     rows = []
     seen = set()
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    try:
-        import config as _cfg
-        _CONFS_TECH_TOPICS = {
-            t.lower().replace("_", "-")
-            for t in getattr(_cfg, "CONFS_TECH_TOPICS", set())
-        }
-        _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-    except Exception:
-        _CONFS_TECH_TOPICS = set()
-        _IGNORE = []
+    import config as _cfg
+
+    _CONFS_TECH_TOPICS = {
+        t.lower().replace("_", "-")
+        for t in getattr(_cfg, "CONFS_TECH_TOPICS", set())
+    }
+    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
     for year in (today.year, today.year + 1):
         try:
@@ -108,21 +105,17 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
     return rows
 
 
-def update_discovered_config(topics: set[str]) -> None:
-    cfg_path = Path(__file__).resolve().parent / "config.py"
-    if not cfg_path.is_file():
-        return
-    text = cfg_path.read_text(encoding="utf-8")
-    marker = "# Discovered confs.tech topic files (reference only; NOT used for extraction):"
-    if marker not in text:
-        old_marker = "# Discovered confs.tech topic files (hand-curate TOPICS above):"
-        if old_marker in text:
-            marker = old_marker
-        else:
-            return
-    head = text.split(marker)[0] + "# Discovered confs.tech topic files (reference only; NOT used for extraction):\n# DISCOVERED_TOPICS = [\n"
-    discovered = "".join(f'#     "{t}",\n' for t in sorted(topics)) + "# ]\n"
-    cfg_path.write_text(head + discovered, encoding="utf-8")
+DISCOVERED_TOPICS_PATH = Path(__file__).resolve().with_name("discovered-topics.txt")
+
+
+def write_discovered_topics(topics: set[str], path: Path | str | None = None) -> None:
+    """Write upstream topic names for reference; never used for extraction."""
+    dest = Path(path) if path is not None else DISCOVERED_TOPICS_PATH
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("".join(f"{topic}\n" for topic in sorted(topics)), encoding="utf-8")
+    except OSError as exc:
+        print(f"could not write {dest}: {exc}", file=sys.stderr)
 
 
 def main() -> int:
@@ -138,7 +131,7 @@ def main() -> int:
     cutoff = today - _dt.timedelta(days=30 * max(1, args.months_back))
 
     rows = collect_rows(cutoff, today, Path(args.cache))
-    update_discovered_config(_DISCOVERED)
+    write_discovered_topics(_DISCOVERED)
 
     data_dir = Path(args.out).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)

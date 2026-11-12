@@ -78,10 +78,14 @@ class TestTableParser(unittest.TestCase):
 class TestCollectRows(unittest.TestCase):
     def setUp(self) -> None:
         self._orig = pat._fetch_page
+        self._original_ignore = pat._IGNORE
         pat._fetch_page = lambda cache_path=None: PAGE
+        # Fixture expectations must not depend on a developer's local config.
+        pat._IGNORE = ["bitcoin", "mobile"]
 
     def tearDown(self) -> None:
         pat._fetch_page = self._orig
+        pat._IGNORE = self._original_ignore
 
     def test_keeps_only_entries_with_a_deadline_on_or_after_cutoff(self) -> None:
         rows = pat.collect_rows(CUTOFF, TODAY, None)

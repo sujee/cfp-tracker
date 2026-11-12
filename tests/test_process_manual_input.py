@@ -38,6 +38,24 @@ import config  # noqa: E402  shared by src manuals and tests config patches
 SAMPLE = (FIX / "input.sample.md").read_text(encoding="utf-8")
 
 
+def run_manual_cli(arguments: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
+    """Run the real CLI without depending on the developer's local config."""
+    src_dir = ROOT / "src"
+    code = (
+        "import runpy, sys\n"
+        f"sys.path.insert(0, {str(src_dir)!r})\n"
+        "import config\n"
+        "config.MANUAL_INPUT_FILES = ['gmail1.md', 'conferences-to-check.md']\n"
+        f"runpy.run_path({str(src_dir / 'process-manual-input.py')!r}, run_name='__main__')\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", code, *arguments],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+
+
 class TestNormalizeClose(unittest.TestCase):
     def test_formats(self) -> None:
         self.assertEqual(pmi._normalize_close("Dec 31, 2026"), "2026-12-31")
@@ -163,13 +181,12 @@ class TestWatchlistEndToEnd(unittest.TestCase):
         )
 
     def run_cli(self) -> subprocess.CompletedProcess:
-        return subprocess.run(
+        return run_manual_cli(
             [
-                sys.executable, str(ROOT / "src" / "process-manual-input.py"),
                 "--out", str(self.out), "--input", str(self.input_dir),
                 "--cache", str(self.cache),
             ],
-            capture_output=True, text=True, cwd=str(ROOT),
+            cwd=str(ROOT),
         )
 
     def test_writes_table_and_discovered_notes_offline(self) -> None:
@@ -203,6 +220,9 @@ class TestWatchlistEndToEnd(unittest.TestCase):
             mock.patch.object(pmi.watchlist, "resolve", return_value=pmi.watchlist.CfpResult(
                 "Down", "https://down.example", error="TimeoutError", failed=True
             )),
+            mock.patch.object(config, "MANUAL_INPUT_FILES", [
+                "gmail1.md", "conferences-to-check.md",
+            ]),
             mock.patch.object(sys, "argv", [
                 "x", "--out", str(self.out), "--input", str(self.input_dir),
             ]),
@@ -217,25 +237,14 @@ class TestMainEndToEnd(unittest.TestCase):
             out = Path(tmp) / "data"
             input_dir = Path(tmp) / "input"
             input_dir.mkdir()
-            # Config names gmail1.md by default; an identically-shaped table next
+            # The test config names gmail1.md; an identically-shaped table next
             # to it is not a source just because it lands in the directory.
             shutil.copy(FIX / "input.sample.md", input_dir / "gmail1.md")
             shutil.copy(FIX / "input.sample.md", input_dir / "scratch.md")
             # The configured checklist exists, but no links means this table-only
             # test must not need the network. The duplicate scratch table is not.
             (input_dir / "conferences-to-check.md").write_text("# Nothing selected\n")
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "src" / "process-manual-input.py"),
-                    "--out",
-                    str(out),
-                    "--input",
-                    str(input_dir),
-                ],
-                capture_output=True,
-                text=True,
-            )
+            proc = run_manual_cli(["--out", str(out), "--input", str(input_dir)])
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("found 5 (new 5, updated 0, unchanged 0)", proc.stdout)
             notes = sorted(out.rglob("*.md"))

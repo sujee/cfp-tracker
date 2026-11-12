@@ -33,13 +33,10 @@ from pathlib import Path
 PAGE_URL = "https://adatosystems.com/cfp-tracker/"
 CACHE_NAME = "adato-tracker.html"  # cached page under --cache DIR
 
-try:
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import config as _cfg
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config as _cfg
 
-    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-except Exception:
-    _IGNORE = []
+_IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
 def _fetch_page(cache_path: Path | None = None) -> str:

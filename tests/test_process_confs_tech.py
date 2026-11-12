@@ -14,6 +14,7 @@ import datetime
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -106,6 +107,17 @@ class TestCollectRows(unittest.TestCase):
         with mock.patch.object(config, "CONFS_TECH_TOPICS", set()):
             pct.collect_rows(CUTOFF, TODAY, None)
         self.assertEqual(self.requested_topics, ["general", "python", "javascript"] * 2)
+
+
+class TestWriteDiscoveredTopics(unittest.TestCase):
+    def test_writes_sorted_topics_without_rewriting_config(self) -> None:
+        config_path = ROOT / "src" / "config.py"
+        original_config = config_path.read_bytes()
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "nested" / "discovered-topics.txt"
+            pct.write_discovered_topics({"python", "api", "data"}, dest)
+            self.assertEqual(dest.read_text(encoding="utf-8"), "api\ndata\npython\n")
+        self.assertEqual(config_path.read_bytes(), original_config)
 
 
 if __name__ == "__main__":

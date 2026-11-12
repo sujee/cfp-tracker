@@ -25,12 +25,9 @@ SOURCE = "open-tech-cfps"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from country import country_name_from_alpha2
 
-try:
-    import config as _cfg
+import config as _cfg
 
-    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-except Exception:
-    _IGNORE = []
+_IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
 def _fetch_json(url: str, cache_path: Path | None = None, cache_key: str | None = None):

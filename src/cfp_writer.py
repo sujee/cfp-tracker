@@ -20,7 +20,9 @@ import yaml
 
 try:
     import config as _cfg
-except ImportError:  # Optional when using the writer outside the repo.
+except ImportError as exc:  # Optional when using the writer outside the repo.
+    if exc.name != "config":
+        raise  # Do not hide an import error raised inside config_local.py.
     _cfg = None
 
 try:

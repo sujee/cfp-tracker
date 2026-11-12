@@ -37,13 +37,10 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-try:
-    import sys as _sys
-    _sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import config as _cfg
-    _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
-except Exception:
-    _IGNORE = []
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config as _cfg
+
+_IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 
