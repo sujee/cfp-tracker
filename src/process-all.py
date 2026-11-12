@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
+from collections import Counter
 import sys
 import tempfile
 from pathlib import Path
@@ -36,7 +37,105 @@ def collect_summaries(output: str) -> list[dict]:
     return rows
 
 
-def print_summary(summaries: list[dict], data_dir: Path, archived: int = 0, archive_dir: Path | None = None) -> None:
+def included_event_types() -> set[str]:
+    """Resolve and validate the configured event-type allow-list."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cfp_writer import EVENT_TYPES, _event_type_included
+
+    return {event_type for event_type in EVENT_TYPES if _event_type_included(event_type)}
+
+
+def collect_event_type_counts(data_dir: Path) -> dict[str, Counter]:
+    """Count live CFP notes by stored source and resolved event type."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cfp_writer import (
+        FrontmatterError,
+        _as_str,
+        _event_name,
+        _read_frontmatter,
+        infer_event_type,
+    )
+
+    counts: dict[str, Counter] = {}
+    if not data_dir.is_dir():
+        return counts
+    for path in sorted(data_dir.rglob("*.md")):
+        try:
+            fm, _ = _read_frontmatter(path)
+        except (OSError, FrontmatterError):
+            continue
+        if _as_str(fm.get("type")) != "cfp":
+            continue
+        source = _as_str(fm.get("source")) or "unknown"
+        event_type = _as_str(fm.get("event_type")).strip() or infer_event_type(_event_name(fm))
+        counts.setdefault(source, Counter())[event_type] += 1
+    return counts
+
+
+def event_type_summary_lines(
+    counts: dict[str, Counter], summaries: list[dict], included: set[str]
+) -> list[str]:
+    """Format a source × event-type matrix, starring configured types."""
+    if not counts:
+        return []
+    from cfp_writer import EVENT_TYPES
+
+    rows = [
+        (summary["source"], "manual" if summary["source"] == "manual input" else summary["source"])
+        for summary in summaries
+    ]
+    used = {key for _, key in rows}
+    rows.extend((source, source) for source in sorted(set(counts) - used))
+    event_types = list(EVENT_TYPES)
+    event_types += sorted(
+        {event_type for counter in counts.values() for event_type in counter}
+        - set(event_types)
+    )
+    labels = {
+        event_type: event_type + (" ★" if event_type in included else "")
+        for event_type in event_types
+    }
+    name_w = max(len(label) for label, _ in rows + [("Total", "")]) + 2
+    name_w = max(name_w, len("source") + 2)
+    totals = Counter()
+    for counter in counts.values():
+        totals.update(counter)
+    widths = {
+        event_type: max(len(labels[event_type]), len(str(totals[event_type]))) + 2
+        for event_type in event_types
+    }
+    header = f"{'source':<{name_w}}" + "".join(
+        f"{labels[event_type]:>{widths[event_type]}}" for event_type in event_types
+    )
+    lines = [
+        "",
+        _style(" Event types (live notes; ★ = included in EVENT_TYPES)", BOLD),
+        header,
+        "-" * len(header),
+    ]
+    for label, source in rows:
+        total = Counter(counts.get(source, Counter()))
+        lines.append(
+            f"{label:<{name_w}}"
+            + "".join(
+                f"{total[event_type]:>{widths[event_type]}}" for event_type in event_types
+            )
+        )
+    lines.append("-" * len(header))
+    lines.append(
+        f"{'Total':<{name_w}}"
+        + "".join(f"{totals[event_type]:>{widths[event_type]}}" for event_type in event_types)
+    )
+    return lines
+
+
+def print_summary(
+    summaries: list[dict],
+    data_dir: Path,
+    archived: int = 0,
+    archive_dir: Path | None = None,
+    included: set[str] | None = None,
+) -> None:
     if not summaries:
         return
     new_total = sum(s["new"] for s in summaries)
@@ -81,6 +180,9 @@ def print_summary(summaries: list[dict], data_dir: Path, archived: int = 0, arch
     lines.append(f"  {on_disk} notes on disk in {data_dir}")
     if archived:
         lines.append(f"  {archived} archived (no source carries them any more) -> {archive_dir}")
+    if included is None:
+        included = included_event_types()
+    lines.extend(event_type_summary_lines(collect_event_type_counts(data_dir), summaries, included))
     lines.append("=" * len(header))
     print("\n".join(lines))
 
@@ -96,6 +198,7 @@ def main() -> int:
     )
     ap.add_argument("--no-archive", action="store_true", help="Do not archive orphan notes.")
     args, rest = ap.parse_known_args()
+    included = included_event_types()  # Fail invalid config before notes or archives change.
 
     here = Path(__file__).resolve().parent
     data_dir = Path(args.out).resolve()
@@ -106,8 +209,8 @@ def main() -> int:
     archived = 0
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        dev_m, confs_m, ninja_m, manual_m, adato_m = (
-            tmp / f"{n}.json" for n in ("dev", "confs", "ninja", "manual", "adato")
+        dev_m, confs_m, ninja_m, manual_m, adato_m, opentech_m = (
+            tmp / f"{n}.json" for n in ("dev", "confs", "ninja", "manual", "adato", "opentech")
         )
 
         steps = [
@@ -115,6 +218,7 @@ def main() -> int:
             [sys.executable, str(here / "process-cfp-ninja.py"), "--out", str(data_dir), "--manifest", str(ninja_m)],
             [sys.executable, str(here / "process-confs-tech.py"), "--out", str(data_dir), "--manifest", str(confs_m)],
             [sys.executable, str(here / "process-adato-tracker.py"), "--out", str(data_dir), "--manifest", str(adato_m)],
+            [sys.executable, str(here / "process-open-tech-cfps.py"), "--out", str(data_dir), "--manifest", str(opentech_m)],
         ]
         if input_dir.is_dir():
             steps.append(
@@ -137,7 +241,7 @@ def main() -> int:
         if not args.no_archive and data_dir.is_dir():
             cmd = [sys.executable, str(here / "archive-orphans.py"), "--data", str(data_dir),
                    "--archive", str(archive_dir)]
-            for m in (dev_m, confs_m, ninja_m, manual_m, adato_m):
+            for m in (dev_m, confs_m, ninja_m, manual_m, adato_m, opentech_m):
                 cmd += ["--manifest", str(m)]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.stdout:
@@ -150,7 +254,7 @@ def main() -> int:
             m = re.search(r"archive-orphans: \w+ (\d+) note", proc.stdout)
             archived = int(m.group(1)) if m else 0
 
-    print_summary(summaries, data_dir, archived, archive_dir)
+    print_summary(summaries, data_dir, archived, archive_dir, included)
     print("done")
     return 0
 

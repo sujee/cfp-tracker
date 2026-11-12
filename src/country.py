@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import re
 
+import pycountry
+
 ONLINE = "Online"
 
 # Canonical label -> every spelling that folds onto it.  Keys are matched after
@@ -57,7 +59,7 @@ _ALIAS_GROUPS: dict[str, list[str]] = {
     "Netherlands": ["netherlands", "the netherlands", "holland", "nl"],
     "United Arab Emirates": ["united arab emirates", "uae", "u a e"],
     "Czechia": ["czechia", "czech republic"],
-    "South Korea": ["south korea", "korea", "republic of korea"],
+    "South Korea": ["south korea", "korea", "republic of korea", "korea republic of"],
     "Ivory Coast": ["ivory coast", "cote d ivoire", "côte d ivoire"],
     "Turkey": ["turkey", "türkiye", "turkiye"],
     "Russia": ["russia", "russian federation"],
@@ -98,3 +100,22 @@ def normalize_country(value: str | None) -> str:
     if not raw:
         return ""
     return ALIASES.get(_key(raw), raw)
+
+
+def country_name_from_alpha2(value: str | None) -> str:
+    """Resolve an ISO 3166-1 alpha-2 code to the tracker's country label.
+
+    Kosovo (``XK``) is a widely used user-assigned code absent from the ISO
+    package. Unknown or malformed values pass through stripped, mirroring
+    :func:`normalize_country` rather than inventing a country.
+    """
+    raw = value.strip() if isinstance(value, str) else ""
+    if not raw:
+        return ""
+    code = raw.upper()
+    if len(code) != 2 or not code.isalpha():
+        return raw
+    if code == "XK":
+        return "Kosovo"
+    entry = pycountry.countries.get(alpha_2=code)
+    return normalize_country(entry.name) if entry else code

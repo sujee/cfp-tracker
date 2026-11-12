@@ -2,8 +2,9 @@
 """Rewrite the per-CFP notes to the current frontmatter shape, in place.
 
 Drops any frontmatter ``notes`` (notes live only in the body), re-quotes
-every value safely, and back-fills missing ``created``/``updated`` stamps
-with today (stamps already present are preserved). Idempotent: running it
+every value safely, back-fills a missing ``dismissed`` flag with ``false``,
+and back-fills missing ``created``/``updated`` stamps with today (stamps
+already present are preserved). Idempotent: running it
 twice changes nothing the second time. Safe to run on a vault that already
 matches the current format.
 

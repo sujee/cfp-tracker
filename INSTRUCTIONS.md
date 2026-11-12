@@ -15,11 +15,11 @@ launched here.
 
 ```
 uv run python src/process-all.py      # every source → data/   (uses the project venv)
-# or, with your own python + PyYAML installed:  python3 src/process-all.py
+# or, with your own python + requirements installed:  python3 src/process-all.py
 ```
 
-`src/process-all.py` runs all five sources: developers.events, cfp.ninja, confs.tech,
-adato-tracker, and any hand-curated rows in `input/*.md`.
+`src/process-all.py` runs all six sources: developers.events, cfp.ninja, confs.tech,
+adato-tracker, Open Tech CFPs, and any hand-curated rows in `input/*.md`.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -27,10 +27,9 @@ adato-tracker, and any hand-curated rows in `input/*.md`.
   into the vault, whose notes are what `0-dashboard/bases/cfps.base` reads.
 - Omit `--today` — the real date is what is wanted. Pass `--today YYYY-MM-DD` only to reproduce
   a past run; it sets the "still open" cutoff.
-- Flags: `--months-back N`, `--cache DIR`. Needs python3 + network + PyYAML. The uv project here
-  (`pyproject.toml` / `uv.lock`) is the easiest setup: `uv sync` then `uv run python src/…`.
-  Without uv, `pip install -r requirements.txt`. `pip install pycountry` is optional
-  (country-flag emoji).
+- Flags: `--months-back N`, `--cache DIR`. Needs python3 + network + PyYAML + pycountry.
+  The uv project here (`pyproject.toml` / `uv.lock`) is the easiest setup: `uv sync` then
+  `uv run python src/…`. Without uv, `pip install -r requirements.txt`.
 - After the sources run, notes that **no** source carries any more are moved through the
   `archived/` symlink into the vault (see below); the run reports how many. `--no-archive`
   skips this; `--archive DIR` changes the destination (default: `archived/` beside the resolved
@@ -50,11 +49,12 @@ adato-tracker, and any hand-curated rows in `input/*.md`.
 4. Verify before reporting back:
    - every note under `data/` parses as valid YAML frontmatter;
    - `event_date` is a clean `YYYY-MM-DD` (start date only, or `TBA`);
-   - `event_type` is nonempty (inferred or manually curated), and existing overrides survive;
-   - per-note edits are preserved: `shortlist`, `submissions`, and the `## Notes` body;
+   - `event_type` is nonempty (inferred or manually curated), existing overrides survive, and every live type is allowed by `EVENT_TYPES`;
+   - per-note edits are preserved: `shortlist`, `dismissed`, `submissions`, and the `## Notes` body;
    - the note count is plausible for the sources — it drifts as upstream revises deadlines, so
      report what you actually got, do not force old numbers.
-5. Report the new note count, the path, and anything suspicious.
+5. Report the new note count, the path, and anything suspicious. The summary's source × event-type
+   matrix counts live notes after deduplication and archiving; ★ marks enabled `EVENT_TYPES`.
 
 ## Testing (any code change)
 
@@ -73,15 +73,16 @@ tests for the new behaviour**:
 A refresh only writes the notes the sources still carry, so a dropped event would otherwise
 linger forever. Instead, any note under `data/` that no source produced this run is **moved
 byte-for-byte** into `archived/` (same `<year>/` layout). Nothing is edited or deleted — edits,
-`shortlist`, and the body come along. Each live view in `cfps.base` excludes that folder and a
+`shortlist`, `dismissed`, and the body come along. Each live view in `cfps.base` excludes that folder and a
 separate **Archived** view matches it, so moved notes drop out of the live views and show only
 there. (The exclusion is per-view: the base's top-level filter ANDs with every view.)
 
 - Per-source `--manifest FILE` (JSON list of note paths) is how each parser reports what it
   produced; `src/archive-orphans.py` diffs those against `data/` and does the move. A row that
   yields to another note (`upsert` returns `"skipped"`) is **not** recorded — that is exactly what
-  lets the losing duplicate be archived. `upsert_counted` (in `src/cfp_writer.py`) does this
-  bookkeeping for all four parsers.
+  lets the losing duplicate be archived. Resolved event types excluded by the `EVENT_TYPES`
+  allow-list use the same skip path: they never enter data, and existing notes of those types move
+  to `archived/`. `upsert_counted` (in `src/cfp_writer.py`) does this bookkeeping for every parser.
 - Only notes with `type: cfp` belong in `data/`; anything else is yours, not the pipeline's.
 - `python3 src/archive-orphans.py --dry-run` lists what *would* move, without moving.
 
@@ -89,7 +90,7 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
 
 - Notes are generated. Do not hand-edit the source-owned fields (`event_name`, `event_date`,
   `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
-  `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`,
+  `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `dismissed`, `submissions`,
   the `## Notes` body, and any extra frontmatter property you add. `topics` is cumulative:
   existing values are kept and new source values are appended (case-insensitive match — `English`
   and `english` are one value), so hand-added topics and topics removed/reordered upstream remain
@@ -100,6 +101,11 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   `hackathon`, or `webinar` (default `conference`; `other` is available for manual curation).
   Existing non-empty values are sticky, including manual overrides. A missing value back-fills
   during refresh or `normalize-data.py` without advancing a valid `updated` stamp.
+- `EVENT_TYPES` in `src/config.py` is the nonempty allow-list applied after type resolution.
+  The checked-in list currently enables `conference`, `summit`, and `workshop`; the writer's
+  missing-config fallback excludes only `meetup`. Excluded rows are skipped and existing notes
+  archived; an allowed explicit override survives. Unknown values or an empty list raise
+  `ValueError` before source or archive steps run.
 - `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
   first-seen date and is preserved. `updated` advances to the run date whenever a source change
   rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp
@@ -131,18 +137,21 @@ Merged into `data/`:
 - **confs.tech** — `github.com/tech-conferences/conference-data` JSON (`cfpUrl` + `cfpEndDate`).
 - **adato-tracker** — the `tablesorter` table on `adatosystems.com/cfp-tracker/` (Leon Adato).
   Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the same
-  feeds, so it ranks lowest and only fills gaps.
+  feeds and only fills gaps. Scrape the table, not the RSS.
+- **Open Tech CFPs** — public `open.json` + `closed.json`, CC BY 4.0, Sessionize-derived.
+  Filter `cfp_close_utc`, not `status`; map only explicit travel/accommodation coverage to benefits.
+  It ranks lowest and fills gaps.
 - **`input/*.md`** — manually curated rows, merged by `src/process-manual-input.py`.
 
 When two sources carry the same conference (same slug), the higher-priority one owns the note:
-`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`. A lower-priority source skips a note
+`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`. A lower-priority source skips a note
 a higher one already owns, so overlapping feeds do not overwrite each other. The same rule now
 applies when the two sources *name* one CFP differently and it would slugify twice: `upsert`
 matches on the submission URL (gated by name similarity, so a form reused across distinct events
 does not merge them), and the lower-priority note is archived as an orphan.
 
-More may be added — see `cfp-sources.md` for scriptable versus browsable-only sources and their
-HTTP-verified status. When you add one: a fetcher under `src/` that normalises to the same row
+More may be added — see `docs/cfp-sources.md` for scriptable/browsable-only status and
+`docs/sources/` for detailed notes. When you add one: a fetcher under `src/` that normalises to the same row
 shape, letting `src/cfp_writer.py` write the note, so the note shape stays stable. Update this
 file and the README in the same change.
 
@@ -155,13 +164,13 @@ file and the README in the same change.
 - `INSTRUCTIONS.md` — this file: the procedure.
 - `AGENTS.md` — the "why": data shapes, note shape, pitfalls, verification.
 - `src/process-all.py` — wrapper that runs every source into `data/`.
-- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-manual-input.py` — per-source fetchers.
+- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — HTTP liveness sweep over a report's links.
-- `cfp-sources.md` — the other CFP sources and their status.
-- `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML); `uv sync`, then
+- `docs/cfp-sources.md` — source index; `docs/sources/` holds one detail page per source.
+- `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync`, then
   `uv run python src/…`.
 - `tests/` — stdlib `unittest` suite (`python3 -m unittest discover -s tests -v`).

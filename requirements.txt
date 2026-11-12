@@ -6,5 +6,6 @@
 # (block/flow lists, quoting, nested maps) instead of by hand.
 PyYAML>=6.0
 
-# Optional: adds the country-flag emoji in the legacy single-file report.
-# pycountry
+# Required: canonical country names for ISO alpha-2 codes (Open Tech CFPs),
+# plus country-flag emoji in the legacy single-file report.
+pycountry>=24.6.1

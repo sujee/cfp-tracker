@@ -77,6 +77,19 @@ ADATO_NAMES = [
     "Conf42 MLOps 2027",                             # VIRTUAL, far-future deadline
 ]
 
+# Open Tech CFPs records kept by stable upstream ID.
+OPEN_TECH_CFPS_PICKS = {
+    "open": [
+        "sessionize:atlanta-hardware-builders",       # in-person, US, minimal tags/perks
+        "sessionize:passmn-monthly-meetings-2026",    # online, tags, no event date
+        "sessionize:agile-on-the-beach-2027",         # UK, travel + accommodation
+    ],
+    "closed": [
+        "sessionize:6th-annual-north-carolina-cybersecurity",  # recently closed
+        "sessionize:vku-stadtwerkekongress-2026-copy",         # too old to import
+    ],
+}
+
 
 def _load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -158,9 +171,27 @@ def extract_adato_tracker() -> None:
     print(f"adato-tracker: {len(ordered)} rows")
 
 
+def extract_open_tech_cfps() -> None:
+    dest = OUT / "open-tech-cfps"
+    dest.mkdir(parents=True, exist_ok=True)
+    for kind, wanted in OPEN_TECH_CFPS_PICKS.items():
+        data = _load(CACHE / f"open-tech-cfps-{kind}.json")
+        by_id = {event.get("id"): event for event in data.get("cfps", [])}
+        missing = [event_id for event_id in wanted if event_id not in by_id]
+        if missing:
+            raise ValueError(f"Open Tech CFPs {kind}: fixture records missing: {missing}")
+        picks = [by_id[event_id] for event_id in wanted]
+        sample = {"generated_at": data.get("generated_at"), "count": len(picks), "cfps": picks}
+        (dest / f"{kind}.sample.json").write_text(
+            json.dumps(sample, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        print(f"Open Tech CFPs {kind}: {len(picks)} rows")
+
+
 if __name__ == "__main__":
     extract_developers_events()
     extract_confs_tech()
     extract_cfp_ninja()
     extract_manual()
     extract_adato_tracker()
+    extract_open_tech_cfps()

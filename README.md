@@ -1,11 +1,15 @@
 # CFP Tracker
 #cfp #conference
 
-A Conference CFPs (Call For Papers) tracker - it pulls data from public sources into Obisidian Vault.
+A personal project to pull conference Calls for Papers (CFPs) from public sources into my personal Obsidian vault.
+
+This is **not another public CFP tracker or index**. It is my personal ingestion pipeline for discovering, shortlisting, and tracking CFPs in Obsidian.
+
+Thank you to all the CFP site maintainers whose public feeds, datasets, calendars, and CFP pages make this project possible.
 
 ## Quick start
 
-Requires Python ≥ 3.10, network access, and PyYAML.
+Requires Python ≥ 3.10, network access, PyYAML, and pycountry.
 
 **setup - one time**
 
@@ -33,7 +37,17 @@ CONFS_TECH_TOPICS = {
 `general.json` is always included. Use `CONFS_TECH_TOPICS = set()` to fetch every confs.tech
 category. This setting does not filter the other sources.
 
-Optionally, you can set `IGNORE_TOPICS` as well
+Optionally, you can set `IGNORE_TOPICS` as well.
+
+`EVENT_TYPES` is the allow-list of event types to keep. The checked-in configuration currently
+enables `conference`, `summit`, and `workshop`; other supported types are commented so you can
+uncomment them as needed. To keep only conferences and summits, use:
+
+```python
+EVENT_TYPES = ["conference", "summit"]
+```
+
+Excluded types are archived. Empty lists and invalid type names fail the run instead of archiving notes.
 
 **Run it: Option 1 (easy) -  with agent**
 
@@ -75,14 +89,27 @@ Each run prints a line per source plus a summary, e.g.
 =====================================================
 source               found    new  updated  unchanged
 -----------------------------------------------------
-developers.events      592      0        0        592
+developers.events      582      0        0        582
 cfp.ninja               34      0        0         34
 confs.tech              13      0        0         13
 adato-tracker          249      0        0        249
+open-tech-cfps         629      0        0        629
 manual input             5      0        0          5
 -----------------------------------------------------
-Total                  893      0        0        893
+Total                 1512      0        0       1512
+
+ Event types (live notes; ★ = included in EVENT_TYPES)
+source               conference ★  meetup  summit ★  workshop ★  hackathon  webinar  other
+developers.events             531       0        45           2          0        0      0
+cfp.ninja                      34       0         0           0          0        0      0
+confs.tech                      1       0         0           0          0        0      0
+adato-tracker                  95       0        13           0          0        0      0
+open-tech-cfps                323       0        10           0          0        0      0
+manual input                    3       0         2           0          0        0      0
+Total                         987       0        70           2          0        0      0
 ```
+
+The event-type matrix counts live notes after deduplication and archiving. ★ marks types enabled in `EVENT_TYPES`.
 
 **Tests:** 
 
@@ -118,6 +145,7 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 |---|---|
 | **All (-dismissed)** | Every non-dismissed note in `data/`. |
 | **All (+dismissed)** | Every note in `data/`. The **Dismissed** column shows the flag. |
+| **Recently Updated (+dismissed) / Recently Updated (-dismissed)** | Data notes sorted by `updated`, newest first; with or without dismissed notes. |
 | **Upcoming (> today)** | Only still-open CFPs (`cfp_close` today or later). Your working list. |
 | **Upcoming (> -30 days)** | Open CFPs plus those that closed in the last 30 days. |
 | **Closed (90d)** | CFPs that closed 30 to 90 days ago, for recap. |
@@ -125,8 +153,8 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 | **Dismissed (+dismissed)** | Only dismissed notes. The minus version is empty by definition. |
 | **Archived (+dismissed) / Archived (-dismissed)** | Archived notes with or without dismissed notes. |
 | **Submitted** | Notes with at least one wiki link under `submissions`. |
-| **Conf in USA / Conf outside USA / Online** | Geography filters. |
-| **Local events** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
+| **Location - USA / Location - Out of USA / Location - Online** | Geography filters. |
+| **Location - Local** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
 
 ## Sample Workflow
 
@@ -156,6 +184,7 @@ python3 src/process-developer-events.py --out data
 python3 src/process-cfp-ninja.py --out data
 python3 src/process-confs-tech.py --out data
 python3 src/process-adato-tracker.py --out data
+python3 src/process-open-tech-cfps.py --out data
 python3 src/process-manual-input.py --out data
 ```
 
@@ -168,7 +197,7 @@ python3 src/check-links.py tmp/cfps.md     # HTTP liveness sweep
 python3 src/normalize-data.py              # re-emit notes to the current shape (idempotent)
 ```
 
-A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `YYYY-MM-DD` (start date only) or `TBA`.
+A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `YYYY-MM-DD` (start date only) or `TBA`. Notes whose resolved `event_type` is excluded by `EVENT_TYPES` are omitted from the live CFP tree and moved to `archived/`; explicit allowed event-type overrides are preserved.
 
 ## Sources
 
@@ -177,12 +206,15 @@ A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `Y
 | **developers.events** | `all-cfps.json` + `all-events.json`, fetched live. `untilDate` is the deadline (epoch ms). |
 | **cfp.ninja** | Open-source CFP platform ([sreday/cfp.ninja](https://github.com/sreday/cfp.ninja)); public API, no auth. Includes location, tags, and speaker benefits. |
 | **confs.tech** | [tech-conferences/conference-data](https://github.com/tech-conferences/conference-data) (MIT). Has `cfpUrl` + `cfpEndDate`; no `ai` topic file, so AI events sit under `general` or a language topic. |
-| **adato-tracker** | The `tablesorter` table on [adatosystems.com/cfp-tracker](https://adatosystems.com/cfp-tracker/) (Leon Adato). Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the other feeds, so it ranks lowest and only fills gaps. |
+| **adato-tracker** | The `tablesorter` table on [adatosystems.com/cfp-tracker](https://adatosystems.com/cfp-tracker/) (Leon Adato). Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates other feeds and only fills gaps. |
+| **Open Tech CFPs** | Public [open/closed JSON](https://github.com/1kevgriff/OpenTechCFPs), filtered by exact `cfp_close_utc`. Includes topics and explicit travel/hotel coverage; lowest-priority gap filler. Data: CC BY 4.0. |
 | **`input/*.md`** | Hand-curated rows, merged by `src/process-manual-input.py`. |
 
-If two sources carry the same conference, the higher-priority one owns the note: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`.
+Open Tech CFPs data attribution: **Open Tech CFPs, https://github.com/1kevgriff/OpenTechCFPs** ([CC BY 4.0](https://github.com/1kevgriff/OpenTechCFPs/blob/main/LICENSE-DATA)).
 
-Details and HTTP-verified status: [`cfp-sources.md`](cfp-sources.md).
+If two sources carry the same conference, the higher-priority one owns the note: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`.
+
+Details and HTTP-verified status: [`cfp-sources.md`](docs/cfp-sources.md).
 
 ## Repo layout
 
@@ -191,7 +223,7 @@ Details and HTTP-verified status: [`cfp-sources.md`](cfp-sources.md).
 - `input/`: hand-curated rows (highest-priority source).
 - `tests/`: stdlib `unittest` suite; fixtures are real slices of the downloaded data.
 - `cache/`, `backups/`, `tmp/`: runtime scratch (gitignored).
-- Docs: [`INSTRUCTIONS.md`](INSTRUCTIONS.md) (agent procedure), [`AGENTS.md`](AGENTS.md) (data shapes, note shape, pitfalls), [`cfp-sources.md`](cfp-sources.md).
+- Docs: [`INSTRUCTIONS.md`](INSTRUCTIONS.md) (agent procedure), [`AGENTS.md`](AGENTS.md) (data shapes, note shape, pitfalls), [`cfp-sources.md`](docs/cfp-sources.md).
 - `cfps.base`: the Obsidian base; copy it into your vault.
 - `cfps-dashboard.md`: an Obsidian note that counts the live CFPs by country, topic, and month.
 - Lives in the vault, not here: `templates/cfp-template.md`.

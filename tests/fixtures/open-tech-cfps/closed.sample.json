@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-11-12T00:57:06Z",
+  "count": 2,
+  "cfps": [
+    {
+      "id": "sessionize:6th-annual-north-carolina-cybersecurity",
+      "source": "sessionize",
+      "url": "https://sessionize.com/6th-annual-north-carolina-cybersecurity/",
+      "name": "6th Annual North Carolina Cybersecurity Symposium",
+      "website": null,
+      "event_start": "2027-02-26",
+      "event_end": null,
+      "cfp_open": "2026-09-02",
+      "cfp_close_utc": "2026-11-01T03:59:00Z",
+      "cfp_timezone": "Eastern Daylight Time (UTC-04:00)",
+      "location": "McKimmon Center, Raleigh, NC, Raleigh, North Carolina, United States",
+      "country": "US",
+      "online": false,
+      "tags": [
+        "ai",
+        "cloud",
+        "security"
+      ],
+      "perks": {
+        "fee": "free for speakers"
+      },
+      "summary": "Our Annual North Carolina Cybersecurity Symposium, hosted by the North Carolina Partnership for Cybersecurity Excellence [NC PACE], is a community-driven event that encourages collaboration and creates a spirit of innovation among participants, presenters, and our sponsors. This year's theme: S…",
+      "first_seen": "2026-10-12T17:33:22Z",
+      "updated": "2026-10-12T17:33:22Z",
+      "status": "closed"
+    },
+    {
+      "id": "sessionize:vku-stadtwerkekongress-2026-copy",
+      "source": "sessionize",
+      "url": "https://sessionize.com/vku-stadtwerkekongress-2026-copy/",
+      "name": "VKU-Gipfel 2027",
+      "website": "https://vku-gipfel.kommunaldigital.de/",
+      "event_start": "2027-03-10",
+      "event_end": "2027-03-11",
+      "cfp_open": "2025-04-15",
+      "cfp_close_utc": "2025-05-14T21:59:00Z",
+      "cfp_timezone": "W. Europe Daylight Time (UTC+02:00)",
+      "location": "ECC Berlin (Estrel Congress Center), Sonnenallee 225, 12057 Berlin",
+      "country": null,
+      "online": false,
+      "tags": [],
+      "perks": {},
+      "summary": "",
+      "first_seen": "2026-10-12T18:06:29Z",
+      "updated": "2026-10-12T18:06:29Z",
+      "status": "closed"
+    }
+  ]
+}

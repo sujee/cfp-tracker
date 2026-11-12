@@ -9,6 +9,23 @@ CONFS_TECH_TOPICS = {
     "ai"
 }
 
+# Allow-list of event_type values to keep in data/. Other types are skipped and
+# existing notes are archived. Valid values: conference, meetup, summit,
+# workshop, hackathon, webinar, other. Keep nonempty; invalid values fail a run.
+# To keep only conferences and summits: EVENT_TYPES = ["conference", "summit"]
+EVENT_TYPES = [
+    # Enabled event types observed in the current live notes:
+    "conference",
+    "summit",
+    "workshop",
+
+    # Additional supported types: uncomment to include them.
+    # "hackathon",
+    # "webinar",
+    # "other",
+    # "meetup",
+]
+
 # Blacklist: drop any conference whose name/topics contain these terms.
 IGNORE_TOPICS = [
     "bitcoin",

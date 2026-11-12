@@ -6,10 +6,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
+    "pycountry>=24.6.1",
 ]
 
 [project.optional-dependencies]
-# Optional: country-flag emoji in the legacy single-file report.
+# Legacy alias; pycountry is now installed by default.
 flags = ["pycountry"]
 
 [tool.uv]

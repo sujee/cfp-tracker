@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-11-12T00:57:06Z",
+  "count": 3,
+  "cfps": [
+    {
+      "id": "sessionize:atlanta-hardware-builders",
+      "source": "sessionize",
+      "url": "https://sessionize.com/atlanta-hardware-builders/",
+      "name": "Atlanta Hardware Builders",
+      "website": "https://www.meetup.com/atlantahardwarebuilders",
+      "event_start": "2026-12-03",
+      "event_end": null,
+      "cfp_open": "2025-11-11",
+      "cfp_close_utc": "2026-11-12T04:59:00Z",
+      "cfp_timezone": "Eastern Standard Time (UTC-05:00)",
+      "location": "11675 Rainwater Dr., Suite 100, Alpharetta, GA 30009, Alpharetta, Georgia, United States",
+      "country": "US",
+      "online": false,
+      "tags": [],
+      "perks": {},
+      "summary": "Welcome to a community where hardware enthusiasts come together to create, learn, and innovate. If you're into CAD design, manufacturing, circuit design, embedded hardware, or IoT, you'll find like-minded engineers here who share your passion for building things that matter. What We're About…",
+      "first_seen": "2026-10-12T17:33:22Z",
+      "updated": "2026-11-06T00:39:40Z",
+      "status": "open"
+    },
+    {
+      "id": "sessionize:passmn-monthly-meetings-2026",
+      "source": "sessionize",
+      "url": "https://sessionize.com/passmn-monthly-meetings-2026/",
+      "name": "PASSMN Monthly Meetings 2026",
+      "website": "https://www.meetup.com/mn-sql-server-user-group-passmn",
+      "event_start": null,
+      "event_end": null,
+      "cfp_open": "2025-11-12",
+      "cfp_close_utc": "2026-11-12T05:59:00Z",
+      "cfp_timezone": "Central Standard Time (UTC-06:00)",
+      "location": "Online",
+      "country": null,
+      "online": true,
+      "tags": [
+        "azure",
+        "data",
+        "microsoft"
+      ],
+      "perks": {},
+      "summary": "The Minnesota SQL Server User Group (PASSMN) is organized to bring professionals of all career levels that work with Microsoft's Data Platform, together to learn and network with others. There is no charge to attend and you are encouraged to bring your co-workers. Our technical sessions provide a…",
+      "first_seen": "2026-10-12T18:06:29Z",
+      "updated": "2026-10-21T00:59:03Z",
+      "status": "open"
+    },
+    {
+      "id": "sessionize:agile-on-the-beach-2027",
+      "source": "sessionize",
+      "url": "https://sessionize.com/agile-on-the-beach-2027/",
+      "name": "Agile On The Beach 2027",
+      "website": "https://www.agileonthebeach.com",
+      "event_start": "2027-07-01",
+      "event_end": "2027-07-02",
+      "cfp_open": "2026-10-19",
+      "cfp_close_utc": "2026-11-15T23:59:00Z",
+      "cfp_timezone": "GMT Standard Time (UTC+00:00)",
+      "location": "AMATA, Falmouth University Campus, Cornwall, TR11 4RH, Falmouth, United Kingdom",
+      "country": "GB",
+      "online": false,
+      "tags": [
+        "agile",
+        "ai",
+        "architecture",
+        "ux"
+      ],
+      "perks": {
+        "travel": "expenses covered",
+        "accommodation": "expenses covered",
+        "fee": "free for speakers"
+      },
+      "summary": "Agile On The Beach is an award winning product and engineering conference with a global reach. Every year, we gather on the beautiful Cornish coast to connect, learn, and share our experiences. Our purpose is to sustain a high quality community, and grow the Cornish tech industry. Agile on the…",
+      "first_seen": "2026-10-19T01:03:35Z",
+      "updated": "2026-10-19T01:03:35Z",
+      "status": "open"
+    }
+  ]
+}

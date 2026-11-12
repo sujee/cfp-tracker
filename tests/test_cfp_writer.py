@@ -20,11 +20,13 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import cfp_writer as cw  # noqa: E402
+import config  # noqa: E402
 
 
 def sample_row(**overrides) -> dict:
@@ -79,6 +81,26 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertEqual(status, "new")
         self.assertTrue(self.path.is_file())
         self.assertEqual(self.path.parent.name, "2026")
+
+    def test_new_note_defaults_to_not_dismissed(self) -> None:
+        self.write_initial()
+
+        self.assertIs(self.frontmatter()["dismissed"], False)
+        self.assertIn("\ndismissed: false\n", self.path.read_text(encoding="utf-8"))
+
+    def test_refresh_backfills_dismissed_without_advancing_stamps(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit("dismissed: false\n", "")
+
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
+
+        fm = self.frontmatter()
+        self.assertIs(fm["dismissed"], False)
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        after = self.path.read_bytes()
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
+        self.assertEqual(self.path.read_bytes(), after)
 
     def test_rerun_with_same_data_is_unchanged_and_untouched(self) -> None:
         self.write_initial()
@@ -217,7 +239,7 @@ class TestEventType(WriterTestCase):
 
     def test_existing_event_type_survives_noop_and_source_update(self) -> None:
         self.write_initial()
-        self.edit("event_type: conference", "event_type: meetup")
+        self.edit("event_type: conference", "event_type: summit")
         edited = self.path.read_bytes()
 
         # Even a conflicting incoming value is ignored when the note has one.
@@ -230,7 +252,7 @@ class TestEventType(WriterTestCase):
             sample_row(location="Barcelona, Spain", event_type="webinar"),
         )
         self.assertEqual(status, "updated")
-        self.assertEqual(self.frontmatter()["event_type"], "meetup")
+        self.assertEqual(self.frontmatter()["event_type"], "summit")
 
     def test_missing_event_type_backfills_without_advancing_updated(self) -> None:
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
@@ -259,6 +281,86 @@ class TestEventType(WriterTestCase):
         after_first = self.path.read_bytes()
         cw.normalize_file(self.path, today="2026-11-10")
         self.assertEqual(self.path.read_bytes(), after_first)
+
+
+class TestMeetupExclusion(WriterTestCase):
+    """Resolved meetups stay out of live data and never enter a manifest."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.row = sample_row(name="vLLM Toronto Meetup")
+        self.path = cw.note_path(self.data, self.row)
+
+    def test_new_meetup_is_skipped_and_not_produced(self) -> None:
+        counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+        produced = []
+
+        status = cw.upsert_counted(self.data, self.row, counts, produced)
+
+        self.assertEqual(status, "skipped")
+        self.assertEqual(counts["skipped"], 1)
+        self.assertEqual(produced, [])
+        self.assertFalse(self.path.exists())
+
+    def test_config_can_allow_meetups(self) -> None:
+        with mock.patch.object(config, "EVENT_TYPES", list(cw.EVENT_TYPES)):
+            self.assertEqual(cw.upsert(self.data, self.row), "new")
+        self.assertTrue(self.path.is_file())
+        self.assertEqual(self.frontmatter()["event_type"], "meetup")
+
+    def test_config_can_exclude_other_types(self) -> None:
+        summit = sample_row(name="Example Summit")
+        with mock.patch.object(config, "EVENT_TYPES", ["conference"]):
+            self.assertEqual(cw.upsert(self.data, summit), "skipped")
+        self.assertFalse(cw.note_path(self.data, summit).exists())
+
+    def test_empty_or_invalid_allow_list_fails_closed(self) -> None:
+        for configured in ([], ["conference", "telepathy"]):
+            with self.subTest(configured=configured):
+                with mock.patch.object(config, "EVENT_TYPES", configured):
+                    with self.assertRaisesRegex(ValueError, "EVENT_TYPES"):
+                        cw.upsert(self.data, self.row)
+                self.assertFalse(self.path.exists())
+
+    def test_explicit_conference_override_survives_a_meetup_name(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(name=self.row["name"], event_type="conference")),
+            "new",
+        )
+        self.assertEqual(cw.upsert(self.data, self.row), "unchanged")
+        self.assertEqual(self.frontmatter()["event_type"], "conference")
+
+    def test_existing_meetup_is_skipped_without_rewriting(self) -> None:
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(name=self.row["name"], event_type="conference")),
+            "new",
+        )
+        self.edit("event_type: conference", "event_type: meetup")
+        before = self.path.read_bytes()
+
+        self.assertEqual(cw.upsert(self.data, self.row), "skipped")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_excluded_meetup_does_not_claim_a_replacements_cfp_url(self) -> None:
+        self.assertEqual(
+            cw.upsert(
+                self.data,
+                sample_row(
+                    name=self.row["name"],
+                    event_type="conference",
+                    source="developers.events",
+                ),
+            ),
+            "new",
+        )
+        self.edit("event_type: conference", "event_type: meetup")
+        cw.reset_cfp_url_index()
+
+        replacement = sample_row(name="vLLM Toronto", source="open-tech-cfps")
+
+        self.assertEqual(cw.upsert(self.data, replacement), "new")
+        replacement_path = cw.note_path(self.data, replacement)
+        self.assertTrue(replacement_path.is_file())
 
 
 class TestTopicsPreserved(WriterTestCase):
@@ -601,11 +703,10 @@ class TestUserContentPreserved(WriterTestCase):
         self.assertIn("Hello notes.", self.path.read_text(encoding="utf-8"))
 
     def test_dismissed_flag_survives_a_genuine_update(self) -> None:
-        # ``dismissed`` is user-owned metadata (not in KNOWN_FM_KEYS), so a
-        # source-driven rewrite must keep it: every live view in ``cfps.base``
-        # filters on it, and losing it would resurrect a dismissed CFP.
+        # ``dismissed`` is user-managed Boolean metadata. A source-driven rewrite
+        # must keep it: losing it would resurrect a dismissed CFP in live views.
         self.write_initial()
-        self.edit("submissions: []", "dismissed: true\nsubmissions: []")
+        self.edit("dismissed: false", "dismissed: true")
 
         status = cw.upsert(self.data, sample_row(location="Barcelona, Spain"))
 
@@ -613,6 +714,19 @@ class TestUserContentPreserved(WriterTestCase):
         self.assertTrue(self.frontmatter()["dismissed"])
         self.assertIn("dismissed: true", self.path.read_text(encoding="utf-8"))
         self.assertEqual(cw.upsert(self.data, sample_row(location="Barcelona, Spain")), "unchanged")
+
+    def test_normalize_backfills_dismissed_and_preserves_true(self) -> None:
+        self.write_initial()
+        self.edit("dismissed: false\n", "")
+        self.assertTrue(cw.normalize_file(self.path))
+        self.assertIs(self.frontmatter()["dismissed"], False)
+
+        self.edit("dismissed: false", "dismissed: true")
+        self.assertTrue(cw.normalize_file(self.path))
+        self.assertIs(self.frontmatter()["dismissed"], True)
+        after = self.path.read_bytes()
+        self.assertTrue(cw.normalize_file(self.path))
+        self.assertEqual(self.path.read_bytes(), after)
 
     def test_known_key_is_not_treated_as_user_metadata(self) -> None:
         # A malformed known key must be regenerated, not preserved verbatim.
@@ -739,6 +853,11 @@ class TestSourcePrecedence(WriterTestCase):
         self.assertEqual(cw.upsert(self.data, sample_row(source="cfp.ninja")), "new")
         self.assertEqual(cw.upsert(self.data, sample_row(source="developers.events")), "updated")
         self.assertEqual(self.frontmatter()["source"], "developers.events")
+
+    def test_open_tech_cfps_fills_gaps_below_adato(self) -> None:
+        self.assertEqual(cw.upsert(self.data, sample_row(source="adato-tracker")), "new")
+        self.assertEqual(cw.upsert(self.data, sample_row(source="open-tech-cfps")), "skipped")
+        self.assertEqual(self.frontmatter()["source"], "adato-tracker")
 
     def test_same_source_still_compares_properties(self) -> None:
         self.write_initial()  # source: developers.events
@@ -1550,8 +1669,8 @@ class TestCfpTemplate(unittest.TestCase):
     )
     REQUIRED = {
         "type", "event_name", "event_date", "location", "country", "cfp_close",
-        "topics", "event_url", "cfp_url", "source", "shortlist", "submissions",
-        "created", "updated",
+        "topics", "event_url", "cfp_url", "source", "shortlist", "dismissed",
+        "submissions", "created", "updated",
     }
 
     # ``event_type`` is inferred and back-filled, so older hand templates may

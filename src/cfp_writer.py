@@ -19,6 +19,11 @@ from pathlib import Path
 import yaml
 
 try:
+    import config as _cfg
+except ImportError:  # Optional when using the writer outside the repo.
+    _cfg = None
+
+try:
     from country import normalize_country
 except ImportError:  # pragma: no cover - when src/ is not already on sys.path
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -54,6 +59,29 @@ def infer_event_type(name: str) -> str:
     return DEFAULT_EVENT_TYPE
 
 
+def _event_type_included(value: str) -> bool:
+    """Return whether config's validated, nonempty allow-list includes *value*."""
+    configured = getattr(_cfg, "EVENT_TYPES", None) if _cfg is not None else None
+    if configured is None:
+        configured = tuple(t for t in EVENT_TYPES if t != "meetup")
+    if isinstance(configured, str) or not hasattr(configured, "__iter__"):
+        raise ValueError("config.EVENT_TYPES must be a nonempty list of event types")
+    allowed = set()
+    for item in configured:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("config.EVENT_TYPES must contain nonempty strings")
+        allowed.add(item.strip().lower())
+    if not allowed:
+        raise ValueError("config.EVENT_TYPES must not be empty")
+    invalid = allowed.difference(EVENT_TYPES)
+    if invalid:
+        raise ValueError(
+            f"Unknown config.EVENT_TYPES value(s): {', '.join(sorted(invalid))}; "
+            f"choose from {', '.join(EVENT_TYPES)}"
+        )
+    return value in allowed
+
+
 # Frontmatter properties that are regenerated from the upstream row. ``upsert``
 # compares these one by one against the existing note and skips the write when
 # all of them already match, so a user's edits to the body, ``shortlist`` /
@@ -84,10 +112,9 @@ SOURCE_PRIORITY = {
     "developers.events": 1,
     "cfp.ninja": 2,
     "confs.tech": 3,
-    # adato-tracker is an aggregator over the same feeds (developers.events,
-    # Sessionize, …) and carries no topics/benefits/languages, so it ranks
-    # lowest: it fills gaps without overwriting a richer note.
+    # Derived aggregators fill gaps without overwriting richer sources.
     "adato-tracker": 4,
+    "open-tech-cfps": 5,
 }
 
 
@@ -200,6 +227,12 @@ def _cfp_url_index(data_dir: Path) -> dict[str, list[tuple[Path, str, str]]]:
             continue
         if _as_str(fm.get("type")) != "cfp":
             continue
+        # Excluded event types are archived when unproduced; they must not keep
+        # a replacement CFP from claiming the same URL. Older notes may not have
+        # a type yet, so infer it from the stored name rather than dropping them.
+        owner_type = _as_str(fm.get("event_type")).strip() or infer_event_type(_event_name(fm))
+        if not _event_type_included(owner_type):
+            continue
         key = _url_key(fm.get("cfp_url"))
         if not key:
             continue
@@ -227,6 +260,7 @@ KNOWN_FM_KEYS = {
     "cfp_url",
     "source",
     "shortlist",
+    "dismissed",
     "submissions",
     # Pipeline timestamps. ``created`` is the note's first-seen date, set once
     # and kept; ``updated`` is bumped to the run date whenever the pipeline
@@ -533,6 +567,7 @@ def _extra_frontmatter_lines(text: str) -> list[str]:
 def _render(
     row: dict,
     shortlist: str,
+    dismissed: str,
     submissions: list,
     notes: str,
     created: str,
@@ -565,6 +600,7 @@ def _render(
         f"cfp_url: {_yaml_str(row.get('cfp_url', ''))}",
         f"source: {_yaml_str(row.get('source', ''))}",
         f"shortlist: {shortlist}",
+        f"dismissed: {dismissed}",
         f"submissions: {_yaml_list(submissions)}",
         f"created: {_yaml_str(created)}",
         f"updated: {_yaml_str(updated)}",
@@ -690,9 +726,12 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     once set; ``updated`` advances to *today* only when a source change rewrites
     the note. A missing/garbled stamp back-fills without counting as an update
     (``updated`` mirrors ``created``), so existing notes start with both equal.
+    A missing ``dismissed`` flag similarly back-fills to ``false`` without
+    advancing valid stamps; an existing flag is preserved across rewrites.
 
-    ``"skipped"`` means this row deliberately wrote nothing because another note
-    owns the CFP: a higher-priority source already owns the same slug (see
+    ``"skipped"`` means this row deliberately wrote nothing because its resolved
+    ``event_type`` is excluded by ``config.EVENT_TYPES``, another note owns the
+    CFP: a higher-priority source already owns the same slug (see
     :data:`SOURCE_PRIORITY`), the same ``cfp_url`` is already owned by a note at a
     different path, or the target's frontmatter is not valid YAML. The caller
     must not record *this* row's path as produced, or the losing note could never
@@ -711,6 +750,29 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     }
     path = note_path(data_dir, row)
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Preserve user-curated frontmatter fields and body notes from the existing file.
+    existing = ""
+    if path.is_file():
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+    try:
+        fm, body = _read_frontmatter_text(existing)
+    except FrontmatterError:
+        print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
+        return "skipped"
+
+    # Event type is curated metadata: preserve a non-empty existing value and
+    # infer it only when absent. Like missing stamps, a missing type back-fills
+    # on the next refresh without advancing a valid ``updated`` stamp.
+    event_type_set = bool(_as_str(fm.get("event_type")).strip())
+    row["event_type"] = _event_type_for(fm, row)
+    if not _event_type_included(row["event_type"]):
+        # Excluded types never enter the live CFP tree. A skipped row is absent
+        # from the manifest, so the refresh archives an existing note as-is.
+        return "skipped"
 
     # Cross-source duplicate: the same CFP under another name slugifies to a
     # different path, so the same-slug rule below misses it. Match on cfp_url —
@@ -735,25 +797,6 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
             ):
                 return "skipped"
 
-    # Preserve user-curated frontmatter fields and body notes from the existing file.
-    existing = ""
-    if path.is_file():
-        try:
-            existing = path.read_text(encoding="utf-8")
-        except OSError:
-            existing = ""
-    try:
-        fm, body = _read_frontmatter_text(existing)
-    except FrontmatterError:
-        print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
-        return "skipped"
-
-    # Event type is curated metadata: preserve a non-empty existing value and
-    # infer it only when absent. Like missing stamps, a missing type back-fills
-    # on the next refresh without advancing a valid ``updated`` stamp.
-    event_type_set = bool(_as_str(fm.get("event_type")).strip())
-    row["event_type"] = _event_type_for(fm, row)
-
     # Topics and languages accumulate across refreshes instead of being
     # replaced by the current source row. Merge before comparing so an
     # unchanged cumulative list remains a no-op and only genuinely new
@@ -771,6 +814,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
         props_match
         and "name" not in fm
         and event_type_set
+        and "dismissed" in fm
         and _valid_iso_date(fm.get("created"))
         and _valid_iso_date(fm.get("updated"))
     ):
@@ -785,6 +829,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
             return "skipped"
 
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
+    dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
     notes = _extract_body_notes(body)
     extras = _extra_frontmatter_lines(existing)
@@ -804,7 +849,10 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
         # ``updated`` starts equal to its ``created``.
         updated = created
 
-    status = _write_if_changed(path, _render(row, shortlist, submissions, notes, created, updated, extras))
+    status = _write_if_changed(
+        path,
+        _render(row, shortlist, dismissed, submissions, notes, created, updated, extras),
+    )
     if key:
         # Keep the in-process index current so a later row for the same URL sees
         # the note this run just wrote.
@@ -834,8 +882,9 @@ def normalize_file(path: Path, today=None) -> bool:
     """Rewrite one existing note in place to the current frontmatter shape.
 
     Drops any frontmatter ``notes`` (kept only in the body), re-quotes every
-    value safely, back-fills a missing ``event_type`` from the name, and
-    re-renders the body. Missing ``created``/``updated`` stamps back-fill with
+    value safely, back-fills a missing ``event_type`` from the name and a
+    missing ``dismissed`` flag with ``false``, and re-renders the body.
+    Missing ``created``/``updated`` stamps back-fill with
     today (or mirror the other stamp when one exists); stamps and existing event
     types are preserved (re-emitting the shape is not a data update). Returns
     False when there is no frontmatter block or the
@@ -861,6 +910,7 @@ def normalize_file(path: Path, today=None) -> bool:
     row["cfp_url"] = strip_utm(row.get("cfp_url"))
     row["event_url"] = strip_utm(row.get("event_url"))
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
+    dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
     notes = _extract_body_notes(body)
     extras = _extra_frontmatter_lines(text)
@@ -871,5 +921,8 @@ def normalize_file(path: Path, today=None) -> bool:
     if not _valid_iso_date(updated):
         # A shape pass is not a data update: back-filled stamps stay equal.
         updated = created
-    _write_if_changed(path, _render(row, shortlist, submissions, notes, created, updated, extras))
+    _write_if_changed(
+        path,
+        _render(row, shortlist, dismissed, submissions, notes, created, updated, extras),
+    )
     return True

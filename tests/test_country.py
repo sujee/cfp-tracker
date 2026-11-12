@@ -115,5 +115,26 @@ class TestNormalizeCountry(unittest.TestCase):
                 self.assertEqual(c.ALIASES[c._key(spelling)], canonical, spelling)
 
 
+class TestCountryNameFromAlpha2(unittest.TestCase):
+    def test_resolves_iso_codes_to_canonical_labels(self) -> None:
+        pairs = {
+            "US": "USA",
+            "GB": "UK",
+            "DE": "Germany",
+            "KR": "South Korea",
+            "NL": "Netherlands",
+            "XK": "Kosovo",
+        }
+        for value, expected in pairs.items():
+            with self.subTest(value=value):
+                self.assertEqual(c.country_name_from_alpha2(value), expected)
+
+    def test_empty_unknown_and_malformed_codes_are_safe(self) -> None:
+        self.assertEqual(c.country_name_from_alpha2(None), "")
+        self.assertEqual(c.country_name_from_alpha2(""), "")
+        self.assertEqual(c.country_name_from_alpha2("ZZ"), "ZZ")
+        self.assertEqual(c.country_name_from_alpha2(" Unknown "), "Unknown")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

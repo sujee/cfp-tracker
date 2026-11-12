@@ -13,7 +13,7 @@ CFP Tracker collects Calls For Papers (CFPs) from public conference sources, nor
 
 The system shall:
 
-1. Read four external CFP sources and optional hand-curated Markdown input.
+1. Read five external CFP sources and optional hand-curated Markdown input.
 2. Select open and recently closed CFPs according to source-specific date rules.
 3. Convert each selected record to a common row shape.
 4. Create or refresh Markdown notes without overwriting user-managed content unnecessarily.
@@ -51,7 +51,7 @@ The system shall:
 | **Live tree** | The recursively scanned Markdown tree under `data/` by default. |
 | **Archive tree** | The parallel destination under `archived/` by default. |
 | **Source-owned property** | A note property regenerated from the current source row. |
-| **User-owned content** | `shortlist`, `submissions`, body notes, and additional frontmatter properties. |
+| **User-owned content** | `shortlist`, `dismissed`, `submissions`, body notes, and additional frontmatter properties. |
 | **Produced path** | A note path recorded by a source as current during a run. |
 | **Orphan** | A parseable `type: cfp` Markdown note in the live tree whose relative path is absent from every produced manifest. |
 | **Run date** | The actual current local date used by the writer for `created` / `updated`, unless the writer function is called directly with a test override. |
@@ -68,9 +68,10 @@ The system shall:
 | cfp.ninja adapter | `src/process-cfp-ninja.py` | Paginate the public API and map events, tags, and benefits. |
 | confs.tech adapter | `src/process-confs-tech.py` | Fetch topic/year JSON from the community conference-data repository. |
 | Adato adapter | `src/process-adato-tracker.py` | Parse the eight-column `tablesorter` HTML table. |
+| Open Tech CFPs adapter | `src/process-open-tech-cfps.py` | Fetch open/closed JSON, normalize UTC deadlines and ISO countries, deduplicate records. |
 | Manual adapter | `src/process-manual-input.py` | Parse curated Markdown tables under `input/`. |
 | Shared writer | `src/cfp_writer.py` | Normalize values, determine note paths, deduplicate, preserve user data, and write notes/manifests. |
-| Country normalizer | `src/country.py` | Canonicalize a fixed set of country and online aliases. |
+| Country normalizer | `src/country.py` | Canonicalize aliases and resolve ISO alpha-2 country codes through pycountry. |
 | Orphan archiver | `src/archive-orphans.py` | Move unproduced CFP notes to the archive tree. |
 | Shape normalizer | `src/normalize-data.py` + `cfp_writer.normalize_file` | Re-emit existing notes in the current shape. |
 | Link checker | `src/check-links.py` | Concurrently check HTTP links extracted from a Markdown report. |
@@ -127,7 +128,8 @@ python3 src/process-all.py
 2. `cfp.ninja`
 3. `confs.tech`
 4. `adato-tracker`
-5. `manual input`, but only when the configured input directory exists
+5. `open-tech-cfps`
+6. `manual input`, but only when the configured input directory exists
 
 Each adapter runs in a separate subprocess using the same Python interpreter as the wrapper. The wrapper captures and relays standard output and standard error. It stops at the first nonzero exit and returns that exit code.
 
@@ -136,7 +138,7 @@ Each adapter runs in a separate subprocess using the same Python interpreter as 
 The writer defines ownership priority, from highest to lowest:
 
 ```text
-manual > developers.events > cfp.ninja > confs.tech > adato-tracker > unknown sources
+manual > developers.events > cfp.ninja > confs.tech > adato-tracker > open-tech-cfps > unknown sources
 ```
 
 This is whole-note ownership, not field-by-field merging:
@@ -161,7 +163,7 @@ Unrecognized arguments are collected and forwarded **only** to `process-develope
 
 ### 4.4 Manifests
 
-The wrapper creates temporary manifest paths for all five sources and supplies those paths to each adapter that runs. After all source steps succeed, it invokes the archiver with all five manifest paths, including manifests for sources that did not run.
+The wrapper creates temporary manifest paths for all six sources and supplies those paths to each adapter that runs. After all source steps succeed, it invokes the archiver with all six manifest paths, including manifests for sources that did not run.
 
 Each manifest is a UTF-8 JSON array containing sorted, deduplicated note paths:
 
@@ -201,9 +203,11 @@ The wrapper:
 - Sums `found`, `new`, `updated`, and `unchanged` across sources.
 - Reports the number of all `*.md` files physically under the data directory.
 - Reports the archived count only when nonzero.
-- Prints `done` after a successful run.
+- Resolves and validates the configured included types before starting any source or archive subprocess. Invalid or empty configuration stops the wrapper before those steps.
+- After the archive step, prints a source × event-type matrix for parseable `type: cfp` notes in the live data directory. Counts use stored `source` and `event_type`; a missing type is inferred from the stored name. The `manual` source appears as `manual input` to match its adapter summary, and unknown sources/types are retained as extra rows/columns.
+- Appends ★ to every type enabled by the validated `EVENT_TYPES` allow-list. The matrix includes all supported type columns and a Total row.
 
-Totals are source-row totals, not counts of unique real-world conferences. The on-disk count is not restricted to valid `type: cfp` notes.
+Totals are source-row totals, not counts of unique real-world conferences. The on-disk count is not restricted to valid `type: cfp` notes. In contrast, the event-type matrix counts parseable CFP notes only and reflects post-deduplication, post-archive ownership, so it can differ from either total.
 
 ## 5. Common normalized row
 
@@ -218,11 +222,11 @@ Every source adapter passes a mapping with these logical fields to the shared wr
 | `country` | string | Yes | Canonicalized by the writer; empty means unknown. |
 | `cfp_close` | string | Yes | Usually `YYYY-MM-DD`; manual input may be free text, `—`, or `Unstated`. |
 | `topics` | list of strings | Yes | Always rendered; defaults to `[]`. On refresh, incoming values merge into the existing list rather than replacing it. |
-| `benefits` | list of strings | Optional | Rendered only when nonempty. cfp.ninja currently supplies it. |
+| `benefits` | list of strings | Optional | Rendered only when nonempty. cfp.ninja supplies it, and Open Tech CFPs supplies explicit travel/hotel coverage. |
 | `languages` | list of strings | Optional | Rendered only when nonempty. developers.events currently supplies it. |
 | `event_url` | string | Yes | Event website, or empty. UTM parameters are removed. |
 | `cfp_url` | string | Yes | Submission/CFP page, or empty. UTM parameters are removed; also used for duplicate matching. |
-| `source` | string | Yes | Normally `manual`, `developers.events`, `cfp.ninja`, `confs.tech`, or `adato-tracker`. |
+| `source` | string | Yes | Normally `manual`, `developers.events`, `cfp.ninja`, `confs.tech`, `adato-tracker`, or `open-tech-cfps`. |
 
 The common row's `name` field becomes `event_name` in note frontmatter. Other scalar field names stay unchanged.
 
@@ -250,6 +254,7 @@ event_url: https://example.com/
 cfp_url: https://example.com/cfp
 source: developers.events
 shortlist: false
+dismissed: false
 submissions: []
 created: 2026-11-06
 updated: 2026-11-06
@@ -286,13 +291,14 @@ The following scalar properties are source-owned and semantically compared on re
 The following content survives a genuine source-driven rewrite:
 
 - `shortlist`, normalized to a bare YAML `true` or `false`.
+- `dismissed`, also normalized to a bare YAML Boolean and defaulting to `false` when missing.
 - `submissions`, emitted as a flow list; values are conventionally Obsidian wiki links.
 - Free-form body notes under `## Notes`.
 - Additional top-level frontmatter properties such as `priority`, `tags`, or a nested `contact` map.
 
 Additional properties are copied as raw top-level YAML lines plus indented continuation lines. This preserves nested maps and block lists in supported layouts, but it is not a guarantee that every comment, anchor, blank line, or arbitrary YAML construction survives byte-for-byte during a rewrite.
 
-User edits alone do not trigger a source refresh write. When source fields are unchanged and both stamps are valid, the entire file is left untouched.
+User edits alone do not trigger a source refresh write. When source fields are unchanged, both stamps are valid, and `dismissed` is present, the entire file is left untouched. A missing `dismissed` flag back-fills to `false` without advancing valid stamps.
 
 ### 6.4 List merging: topics and languages
 
@@ -319,8 +325,8 @@ This produces the following refresh behavior:
 
 ### 6.5 Defaults, parsing, and legacy migration
 
-- New notes default to `shortlist: false` and `submissions: []`.
-- `shortlist` values `true`, `yes`, `on`, and `1`, case-insensitively after string conversion, normalize to true; other values normalize to false.
+- New notes default to `shortlist: false`, `dismissed: false`, and `submissions: []`.
+- `shortlist` and `dismissed` values `true`, `yes`, `on`, and `1`, case-insensitively after string conversion, normalize to true; other values normalize to false.
 - Existing `submissions` may be a block list, flow list, or scalar. A nonempty scalar becomes a one-element list.
 - Legacy scalar `submission` is used only when `submissions` is absent, and migrates to `submissions` on the next rewrite.
 - Legacy `name` populates `event_name` when `event_name` is empty. The next rewrite removes `name`. This shape migration does not advance a valid `updated` stamp.
@@ -356,6 +362,8 @@ A file with no frontmatter is not protected by that rule; a colliding path can b
 ```text
 conference | meetup | summit | workshop | hackathon | webinar | other
 ```
+
+After type resolution, a nonempty allow-list in `config.EVENT_TYPES` determines whether the note belongs in live data. When that setting is absent, the writer's fallback includes every controlled value except `meetup`; the checked-in configuration currently enables `conference`, `summit`, and `workshop` and leaves other supported types commented for opt-in. A project owner can set `["conference", "summit"]` to retain only those types. Values are trimmed and lowercased. Empty lists, non-string values, and names outside the supported set raise `ValueError` before ingestion rather than enabling an accidental broad archival. A disallowed row returns `skipped`, produces no note, and causes an existing note of that type to be archived because it is absent from manifests. An explicit sticky override is retained only when its type is allowed.
 
 Current external sources do not expose a standardized event-kind property. The writer therefore resolves a new or unset event type as follows:
 
@@ -438,7 +446,7 @@ A changed conference name, deadline, or fallback year can select a different not
 | `new` | A note did not previously exist at the target path and was written. |
 | `updated` | An existing file was rewritten. This includes source changes and stamp-only backfills that change bytes. |
 | `unchanged` | Source properties match and both stamps have valid date shape; no write occurred. |
-| `skipped` | A higher-priority owner or URL duplicate wins, or target frontmatter is invalid. |
+| `skipped` | The resolved type is excluded by `config.EVENT_TYPES`, a higher-priority owner or URL duplicate wins, or target frontmatter is invalid. |
 
 The optional `today` argument is a function-level testing/reproduction override. Production adapters call `upsert_counted` without it.
 
@@ -451,6 +459,8 @@ Before path comparison or rendering, the writer:
 3. Removes `utm_*` query parameters from `event_url`.
 4. After reading existing frontmatter, preserves a nonempty `event_type` or infers/backfills a missing one according to §6.7.
 5. Merges incoming topics and languages into the existing lists according to §6.4.
+
+After resolving `event_type` but before cross-path URL matching, the writer rejects any type excluded by the validated `config.EVENT_TYPES` allow-list. The subsequent merge steps apply only to retained types.
 
 Thus spelling or tracking-parameter-only differences must not force repeated rewrites. Event-type edits alone do not force a rewrite. A genuinely new topic or language triggers a rewrite; source values removed or reordered upstream and user additions do not. Other source-owned properties retain their normal replacement semantics.
 
@@ -516,7 +526,7 @@ After parsing the target path:
 
 ### 9.2 Cross-path CFP URL matching
 
-A note may have a different slug but the same submission page. To detect this, the writer builds a lazy, per-process, per-data-directory index of existing parseable `type: cfp` notes keyed by normalized `cfp_url`. Successful writes are appended to the index during that process.
+A note may have a different slug but the same submission page. To detect this, the writer builds a lazy, per-process, per-data-directory index of existing parseable `type: cfp` notes keyed by normalized `cfp_url`, excluding notes whose `event_type` is disallowed by configuration. Those excluded notes cannot claim a URL against a replacement during the refresh that archives them. Successful writes are appended to the index during that process.
 
 The duplicate URL key is derived by:
 
@@ -588,7 +598,19 @@ The developers.events adapter alone also supports `--past-days N` / `--days-back
 
 Manual input has no recency filter.
 
-### 10.2 Ignored terms
+### 10.2 Event-type allow-list
+
+`config.EVENT_TYPES` is a nonempty collection of strings naming controlled types to retain in live data. If the setting is unavailable, the writer's fallback is:
+
+```text
+conference | summit | workshop | hackathon | webinar | other
+```
+
+The checked-in configuration enables `conference`, `summit`, and `workshop`; other supported types are commented for optional inclusion.
+
+The writer validates and normalizes configured values on use. Unknown or empty values raise an error. Existing notes with excluded resolved types are absent from produced manifests and consequently archived, just like skipped duplicate paths.
+
+### 10.3 Ignored terms
 
 `src/config.py` defines:
 
@@ -604,13 +626,16 @@ Source adapters reject configured terms as follows:
 | cfp.ninja | Case-insensitive substring in event name or any parsed tag. |
 | confs.tech | Case-insensitive substring in event name. |
 | adato-tracker | Case-insensitive substring in event name. |
+| open-tech-cfps | Case-insensitive substring in event name or any non-`untagged` tag. |
 | Manual input | Case-insensitive substring in cleaned event name; manual topic text is not used for exclusion. |
 
 Configuration import failures are broadly caught by adapters and result in no ignore list or confs.tech topic allowlist.
 
-### 10.3 Country canonicalization
+### 10.4 Country canonicalization
 
 `normalize_country` trims the value, folds case/punctuation/whitespace for lookup, and maps known whole-value aliases to canonical labels. Unknown values are returned trimmed but otherwise unchanged. Empty input returns empty. Normalization is idempotent.
+
+`country_name_from_alpha2` resolves ISO codes with pycountry and then applies the same aliases. `XK` maps to Kosovo; unknown two-letter codes and malformed values pass through rather than being replaced with invented countries.
 
 | Canonical output | Representative accepted aliases |
 |---|---|
@@ -631,7 +656,7 @@ Configuration import failures are broadly caught by adapters and result in no ig
 
 The function does not infer missing countries from arbitrary location text and does not validate unknown country names against a country database.
 
-### 10.4 URL tracking cleanup
+### 10.5 URL tracking cleanup
 
 For both stored URL fields, `strip_utm`:
 
@@ -670,7 +695,7 @@ The adapter mapping tables below describe the incoming normalized source row. Th
 - Ignore records with missing `untilDate` or a deadline before the cutoff.
 - Ignore the free-form `until` string for filtering.
 - Ignore `conf.status`; historical records can claim to be open.
-- Apply ignored-name/topic rules from §10.2.
+- Apply ignored-name/topic rules from §10.3.
 - Deduplicate by `(normalized conference name, close date)`; the first row wins.
 - Sort selected rows by `(close date, lowercase name)`.
 
@@ -858,7 +883,43 @@ ISO datetime strings and free-text dates are rejected by this adapter. Event end
 
 Standalone options are `--out`, `--today`, `--months-back` (default 1), `--cache`, and `--manifest`.
 
-### 11.5 Manual Markdown input
+### 11.5 Open Tech CFPs
+
+**Implementation:** `src/process-open-tech-cfps.py`
+
+**Source:** `https://1kevgriff.github.io/OpenTechCFPs/api/open.json` and `closed.json`
+
+**Data license:** CC BY 4.0. Required attribution: **Open Tech CFPs, https://github.com/1kevgriff/OpenTechCFPs**.
+
+#### Input and caching
+
+- Fetch `open.json` then `closed.json`; prefer readable JSON caches named `open-tech-cfps-<kind>.json` without a freshness check.
+- Require a top-level object with a `cfps` list of objects. A malformed document raises an error and stops the adapter rather than silently producing no rows.
+- Requests use User-Agent `cfp-merge/1.0`, Accept `application/json`, and a 30-second timeout.
+
+#### Filtering, identity, and ordering
+
+- Parse `cfp_close_utc` as an offset-aware ISO datetime, normalize to UTC, and compare with midnight UTC on the inclusive cutoff date. Missing, invalid, or timezone-naive deadlines are rejected. Upstream `status` is not used.
+- Require nonempty event `name` and submission `url`. Apply ignored-term rules to the name and tags; ignore the upstream `untagged` sentinel.
+- Sort input records by source `updated` descending, with missing/invalid values oldest. Deduplicate repeated source IDs or submission URLs, then by normalized name + UTC close date—the note-path key—so one record cannot rewrite another in the same run.
+- Sort output by UTC close date, lowercase name, then submission URL.
+
+| Common field | Mapping |
+|---|---|
+| `name` | Event `name`. |
+| `event_date` | Strict ISO `event_start`, otherwise `TBA`. |
+| `location` | Source `location`; fallback is `Online`, resolved country, then `—`. |
+| `country` | `Online` for `online: true`; otherwise resolve ISO alpha-2 `country` through `country_name_from_alpha2`. |
+| `cfp_close` | UTC deadline date as ISO. |
+| `topics` | Non-`untagged` source tags. |
+| `benefits` | `travel` for `perks.travel` and `hotel` for `perks.accommodation`, only when value is `expenses covered` case-insensitively. `fee: free for speakers` is not an honorarium. |
+| `event_url` | `website`, or empty. |
+| `cfp_url` | `url`. |
+| `source` | `open-tech-cfps` |
+
+Standalone options are `--out`, `--today`, `--months-back` (default 1), `--cache`, and `--manifest`.
+
+### 11.6 Manual Markdown input
 
 **Implementation:** `src/process-manual-input.py`  
 **Default input:** sorted, nonrecursive `input/*.md`  
@@ -981,7 +1042,7 @@ Create destination parents and rename the file. The operation:
 - Preserves nested/year layout.
 - Moves note contents byte-for-byte.
 - Does not add an `archived` property.
-- Does not edit `shortlist`, submissions, notes, or timestamps.
+- Does not edit `shortlist`, `dismissed`, submissions, notes, or timestamps.
 - Does not delete empty source directories.
 - Performs no rollback if a later move fails.
 
@@ -1022,7 +1083,7 @@ For a file with valid, nonempty mapping frontmatter, normalization:
 4. Converts topics, benefits, and languages through list normalization.
 5. Canonicalizes country.
 6. Removes UTM parameters from both URLs.
-7. Normalizes shortlist and submissions.
+7. Normalizes `shortlist`, `dismissed`, and submissions; a missing `dismissed` flag becomes `false`.
 8. Migrates legacy scalar submission where applicable.
 9. Extracts body notes.
 10. Preserves additional properties according to §6.3.
@@ -1078,25 +1139,26 @@ Folder filtering is per-view because the global filter ANDs with each view. A gl
 |---|---|
 | **All (-dismissed)** | Every non-dismissed CFP note under the configured data path. No deadline restriction. |
 | **All (+dismissed)** | Every CFP note under the configured data path, including dismissed notes. |
+| **Recently Updated (+/-dismissed)** | Data notes sorted by `updated` descending. The plus variant includes dismissed notes; the minus variant excludes them. |
 | **Short listed (-dismissed)** | Non-dismissed data notes with `shortlist == true`. No deadline restriction. |
 | **Submitted (-dismissed)** | Non-dismissed data notes where `list(submissions).length > 0`. No deadline restriction. |
 | **Upcoming (> -30 days) (-dismissed)** | `cfp_close >= today() - "30d"`. Includes that cutoff day and all future deadlines. |
 | **Upcoming (> today) (-dismissed)** | `cfp_close >= today()`. Inclusive despite the label's `>`. |
 | **Closed (90d) (-dismissed)** | `cfp_close < today() - "30d"` and `>= today() - "90d"`. |
-| **Conf in USA (-dismissed)** | `country == "USA"`. |
-| **Conf outside USA (-dismissed)** | `country != "USA"`. Includes online and empty or unknown country values. |
-| **Online (-dismissed)** | `country == "Online"`. |
-| **Local events (-dismissed)** | Any configured Bay Area location substring matches. |
+| **Location - USA (-dismissed)** | `country == "USA"`. |
+| **Location - Out of USA (-dismissed)** | `country != "USA"`. Includes online and empty or unknown country values. |
+| **Location - Online (-dismissed)** | `country == "Online"`. |
+| **Location - Local (-dismissed)** | Any configured Bay Area location substring matches. |
 | **Dismissed (+dismissed)** | Dismissed notes under the configured data path. |
 | **Dismissed (-dismissed)** | Empty by definition because the filters require both dismissal states. |
 | **Archived (-dismissed)** | Non-dismissed notes under the configured archived path. Sorted by deadline descending. |
 | **Archived (+dismissed)** | All notes under the configured archived path. Sorted by deadline descending. |
 
-For regular data views and Archived, the plus and minus versions differ only in dismissal filtering. All data views sort `cfp_close` ascending.
+For regular data views and Archived, the plus and minus versions differ only in dismissal filtering. Regular data views sort `cfp_close` ascending, except Recently Updated sorts `updated` descending. Archived sorts `cfp_close` descending.
 
-The Local events substring list currently covers San Francisco, San Jose, Oakland, Berkeley, Santa Clara, Sunnyvale, Palo Alto, Mountain View, Cupertino, Redwood, Menlo Park, San Mateo, Milpitas, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, and Bay Area.
+The Location - Local substring list currently covers San Francisco, San Jose, Oakland, Berkeley, Santa Clara, Sunnyvale, Palo Alto, Mountain View, Cupertino, Redwood, Menlo Park, San Mateo, Milpitas, Fremont, Hayward, Emeryville, Los Altos, Los Gatos, Pleasanton, Livermore, and Bay Area.
 
-Most views display a common set of CFP properties. Every view shows `shortlist` followed immediately by `dismissed` after `cfp_close`. No view displays `benefits` or `submissions`. Submitted views still filter on submission data. Upcoming (> today) additionally includes `languages` in its ordered columns.
+Most views display a common set of CFP properties. Every view shows `shortlist` followed immediately by `dismissed` after `cfp_close`. No view displays `benefits` or `submissions`. Submitted views still filter on submission data. Upcoming (> today) additionally includes `languages`; Recently Updated adds `updated` after `dismissed`.
 
 ### 15.3 Dataview dashboard
 
@@ -1117,10 +1179,11 @@ The dashboard performs no topic canonicalization. The month query does not expli
 - Python 3.10 or newer.
 - Network access for fetching uncached external sources.
 - PyYAML 6.0 or newer.
+- pycountry 24.6.1 or newer.
 - `curl` for the preferred developers.events fetch path.
 - uv is supported but optional.
 
-`pyproject.toml` and `requirements.txt` define PyYAML as the only required Python dependency. `pycountry` is optional and used only for country-flag emoji in the retired single-file developers.events report. The uv project is a scripts folder, not an installable package.
+`pyproject.toml` and `requirements.txt` define PyYAML and pycountry as required Python dependencies. pycountry resolves Open Tech CFPs' ISO country codes and also supports country-flag emoji in the retired single-file developers.events report. The uv project is a scripts folder, not an installable package.
 
 Setup and refresh:
 
@@ -1158,13 +1221,13 @@ The suite is primarily offline and covers:
 
 - Writer rendering, identity, no-op behavior, topic merging, event-type inference/preservation/backfill, precedence, duplicate matching, timestamps, UTM removal, and invalid YAML.
 - Every source parser using real source slices under `tests/fixtures/`.
-- Country aliases.
+- Country aliases and ISO alpha-2 conversion.
 - Manifest and orphan movement behavior.
 - Summary parsing and output arithmetic.
 - An offline manual-input subprocess path.
 - Conformance of available vault template frontmatter keys to the generated schema; this test skips when the external template is unavailable.
 
-Fixture slices represent downloaded developers.events, cfp.ninja, confs.tech, and Adato data plus real manual table rows. `tests/fixtures/extract_fixtures.py` regenerates them from cached/real input when maintenance is needed.
+Fixture slices represent downloaded developers.events, cfp.ninja, confs.tech, Adato, and Open Tech CFPs data plus real manual table rows. `tests/fixtures/extract_fixtures.py` regenerates them from cached/real input when maintenance is needed.
 
 Any `src/` change must keep the suite green and add or update tests for changed behavior. Tests should not be deleted or weakened merely to force a pass.
 
@@ -1173,9 +1236,9 @@ Any `src/` change must keep the suite green and add or update tests for changed 
 After a refresh:
 
 1. Confirm every intended note under live data has valid YAML mapping frontmatter.
-2. Check that generated `event_date` values are clean `YYYY-MM-DD` start dates or `TBA`, while recognizing the manual free-text exception described in §11.5 and §17.9.
+2. Check that generated `event_date` values are clean `YYYY-MM-DD` start dates or `TBA`, while recognizing the manual free-text exception described in §11.6 and §17.9.
 3. Confirm a second identical run does not rewrite unchanged notes or change their mtimes.
-4. Confirm `shortlist`, `submissions`, body notes, and additional frontmatter survive source changes.
+4. Confirm `shortlist`, `dismissed`, `submissions`, body notes, and additional frontmatter survive source changes.
 5. Confirm manifests exclude skipped rows and archive dry-run output is plausible.
 6. Check that no unexpected non-CFP Markdown files were archived.
 7. Compare source-row counts and on-disk counts with freshly fetched data, not with an assumed historical baseline.

@@ -13,7 +13,7 @@ first (`ln -s` commands in README › Quick start).
 This folder is a git repo with `origin` → `git@github.com:sujee/cfp-tracker.git`.
 
 Keeps a set of **one note per conference** under `data/`, refreshed from public CFP feeds
-(developers.events, cfp.ninja, confs.tech, adato-tracker, and hand-curated `input/*.md`). The notes are the
+(developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated `input/*.md`). The notes are the
 data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`).
 
 ## When to use
@@ -52,6 +52,13 @@ Its `country` is a mix of codes and names (`USA`, `UK`, `NL`, `Germany`) and is 
 online events (`is_online`); the submission page is `cfp.ninja/e/<slug>`. Its events skew
 toward a few recurring series (Conf42, SREday/LLMday/PLATFORMday), which is expected.
 
+Open Tech CFPs is a CC BY 4.0 Sessionize-derived dataset (`api/open.json` + `api/closed.json`).
+Filter on the exact `cfp_close_utc`, never `status`. `url` is the submission page, `website` the
+event page, and `country` is ISO alpha-2 (converted through `pycountry`). Only `travel` and
+`accommodation` values of `"expenses covered"` become benefits; `fee: free for speakers` is not
+an honorarium. Tags are inferred upstream. Dedupe by normalized name + UTC close date because
+those values determine the note path; the newest source `updated` record wins duplicates.
+
 ## How to run
 
 ```
@@ -60,9 +67,13 @@ uv run python src/process-all.py      # every source → data/   (uv project: py
 ```
 
 Options: `--months-back N` (how far back "recently closed" reaches, default 1), `--today
-YYYY-MM-DD`, `--cache DIR`. Needs python3 + network + PyYAML (`uv sync`, or `pip install -r
-requirements.txt`); `pip install pycountry` is optional (country-flag emoji). (`--focus-tags` /
+YYYY-MM-DD`, `--cache DIR`. Needs python3 + network + PyYAML + pycountry (`uv sync`, or
+`pip install -r requirements.txt`). (`--focus-tags` /
 `--no-focus` are retained but only affect the retired report — see *Focus filtering* below.)
+
+`process-all.py` validates `EVENT_TYPES` before source/archive subprocesses. Its summary also
+prints a source × event-type matrix of live notes after deduplication/archiving; ★ marks included
+types. These note counts differ from the raw source-row totals.
 
 `src/normalize-data.py` re-emits existing notes to the current shape in place (drops
 frontmatter `notes`, re-quotes values); idempotent.
@@ -82,17 +93,18 @@ Everything an agent needs is here, deliberately:
 - `src/process-confs-tech.py` — confs.tech fetcher.
 - `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
   `adatosystems.com/cfp-tracker/`).
+- `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
 - `src/process-manual-input.py` — merges hand-curated `input/*.md`.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — HTTP liveness sweep over a report's links.
-- `cfp-sources.md` — the other CFP sources, with HTTP-verified status.
-- `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML); `uv sync` creates
+- `docs/cfp-sources.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
+- `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
 - `README.md` — overview and the source list.
-- `tests/` — stdlib `unittest` suite for the writer, the run summary, and all five parsers
+- `tests/` — stdlib `unittest` suite for the writer, the run summary, and all six parsers
   (`python3 -m unittest discover -s tests -v`); fixtures under `tests/fixtures/` are real
   slices of the downloaded data.
 - `tmp/cfps.md` — an earlier generated report, now a legacy/scratch copy kept in the excluded `tmp/`.
@@ -122,13 +134,13 @@ location: Pasadena, CA (USA)
 country: USA                   # canonical: USA | UK | Online | a country name | empty
 cfp_close: 2026-11-01          # deadline; may be free text ("Early 2027 / Unstated")
 topics: [ai, agents]
-benefits: [travel, hotel]      # optional; only when the source states it (cfp.ninja) → travel | hotel | honorarium
+benefits: [travel, hotel]      # optional; source-stated only (cfp.ninja, Open Tech CFPs) → travel | hotel | honorarium
 languages: [english]           # optional; from developers.events event tags; other sources carry none
 event_url: https://…           # conference site
 cfp_url: https://…             # CFP / submission URL
-source: developers.events      # developers.events | cfp.ninja | confs.tech | adato-tracker | manual
+source: developers.events      # developers.events | cfp.ninja | confs.tech | adato-tracker | open-tech-cfps | manual
 shortlist: false               # user flag, preserved across runs
-dismissed: false               # optional user flag: true hides it from every live view
+dismissed: false               # user flag, defaults false and preserved across runs; true hides live views
 submissions: []                # wiki links (a list), preserved across runs
 created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
 updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
@@ -150,7 +162,7 @@ are double-quoted and stay valid YAML. A value YAML would otherwise retype is qu
 `"365"` and reads back as a string (`_yaml_reads_as_non_string`). ISO dates are the deliberate
 exception: `event_date`, `cfp_close`, `created` and `updated` stay unquoted so PyYAML types them
 as dates and Obsidian maps them to its date property; `_as_str` turns them back into
-`YYYY-MM-DD`. `shortlist` is written as a bare `true`/`false` boolean.
+`YYYY-MM-DD`. `shortlist` and `dismissed` are written as bare `true`/`false` booleans.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 
@@ -164,8 +176,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
 
 - **The source-owned fields are regenerated; everything else survives a refresh.**
   `event_name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
-  `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
-  `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
+  `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `dismissed`,
+  `submissions`, the `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
   Legacy `name` is a fallback for `event_name`. A rewrite removes `name`. Renaming this key alone does not advance `updated`.
 - **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`:
@@ -175,6 +187,14 @@ currently change nothing the base reads. Kept for reference / if the report retu
   is preserved and does not itself trigger a rewrite. A missing value back-fills during
   `upsert` and `normalize_file` with return status updated when a file changes, but valid
   `created`/`updated` stamps stay unchanged unless another source property changed.
+- **Event types are controlled by an allow-list.** `src/config.py` sets a nonempty `EVENT_TYPES`
+  (currently `conference`, `summit`, `workshop`; the missing-config fallback enables every
+  controlled type except `meetup`). After the sticky/inferred type is resolved, `upsert` returns
+  `skipped` for a disallowed type before any URL dedupe or write. New excluded events create no
+  note, and existing ones are omitted from manifests and archived byte-for-byte. An explicit
+  allowed override remains sticky. The CFP-URL index ignores excluded notes so they cannot block
+  replacements. Empty lists and unknown type names raise `ValueError` before any source or archive
+  subprocess instead of silently archiving broadly.
 - **`topics` and `languages` are cumulative, not replaced.** `_merge_list` keeps the existing list verbatim
   as a prefix and appends only incoming values not already present (case-insensitive
   match — `English` and `english` are one value, the existing spelling wins; incoming
@@ -203,9 +223,9 @@ currently change nothing the base reads. Kept for reference / if the report retu
   writing, `upsert` compares each source-owned property in the existing note (semantic
   compare — quoting/formatting differences do not count) and skips the write when all
   match, so untouched notes keep their mtime and your edits are never clobbered. Extra
-  properties are re-emitted verbatim, including block lists and nested maps. The one
-  exception is a note missing `created`/`updated`: that back-fills once, then the note is
-  unchanged again.
+  properties are re-emitted verbatim, including block lists and nested maps. The exceptions are
+  missing `created`/`updated` stamps and a missing `dismissed` flag: those back-fill once without
+  advancing valid stamps, then the note is unchanged again.
 - **Tests are required for every code change.** `python3 -m unittest discover -s tests -v`
   (stdlib only) covers the change detection and preservation rules. Any `src/` edit must keep
   the suite passing — update tests whose expectations legitimately changed, and add tests for
@@ -218,13 +238,13 @@ currently change nothing the base reads. Kept for reference / if the report retu
   because the base's top-level filter ANDs with every view, so a global
   data-folder restriction would blank Archived. Only `type: cfp` notes are touched. Other files in
   `data/` are left alone. `--no-archive` disables archiving.
-- **`dismissed: true` is the user's "not interested" flag, and it needs no pipeline support.**
-  It is absent from `KNOWN_FM_KEYS`, so `_extra_frontmatter_lines` carries it through every
-  source-driven rewrite and every `normalize-data.py` pass; the note stays in `data/` (a manual
-  move to `archived/` would instead be re-created by the next run). `cfps.base` derives
-  `formula.is_dismissed` / `formula.is_live` from it, so a view updates as soon as the property
-  is set — no re-run. The two folder paths live once each as `formula.data_dir` /
-  `formula.archived_dir` and match as path *suffixes*
+- **`dismissed: true` is the user's "not interested" flag.** New notes and the vault template
+  default it to `false`; `upsert` and `normalize_file` back-fill it when missing without advancing
+  valid stamps. It is in `KNOWN_FM_KEYS`, normalized to a bare Boolean on rewrite, and preserved
+  across refreshes; the note stays in `data/` (a manual move to `archived/` would instead be
+  re-created by the next run). `cfps.base` derives `formula.is_dismissed` / `formula.is_live` from
+  it, so a view updates as soon as the property is set — no re-run. The two folder paths live once
+  each as `formula.data_dir` / `formula.archived_dir` and match as path *suffixes*
   (`("/" + file.path).contains("/" + formula.data_dir)`), so the same base file works for a
   vault rooted at `cfps/` (the landing instructions) and for this vault
   (`30-speaking-talks/cfps/`, base at `0-dashboard/bases/cfps.base`, dashboard at
@@ -238,8 +258,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   cell keeps free text but drops a trailing `"/ Unstated"` (`Dec 2026 / Unstated` → `Dec 2026`).
 - **Overlapping feeds: a higher-priority source wins a shared note.** Some conferences appear in
   both developers.events and confs.tech (or cfp.ninja) and normalize to the same slug. Without a
-  rule both would write it every run (confs.tech last, blanking `country`). `cfp_writer.SOURCE_PRIORITY`
-  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker`) makes a lower-priority source skip a
+  rule the later writer would overwrite the other. `cfp_writer.SOURCE_PRIORITY`
+  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`) makes a lower-priority source skip a
   note a higher-priority one already owns, so a no-op refresh reports 0 updated.
 - **Two feeds can name one CFP differently, so it slugifies twice** (`SCaLE` from confs.tech vs
   `Southern California Linux Expo - SCaLE 24x` from developers.events — same `cfp_url`, two

@@ -28,6 +28,8 @@ properties:
     displayName: Location
   cfp_close:
     displayName: CFP close
+  updated:
+    displayName: Updated
   topics:
     displayName: Topics
   cfp_url:
@@ -87,6 +89,46 @@ views:
       note.topics: 181
       note.event_url: 153
       note.cfp_url: 169
+  - type: table
+    name: Recently Updated (+dismissed)
+    filters:
+      and:
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - updated
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: updated
+        direction: DESC
+  - type: table
+    name: Recently Updated (-dismissed)
+    filters:
+      and:
+        - 'formula.is_live'
+    order:
+      - cfp_close
+      - shortlist
+      - dismissed
+      - updated
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: updated
+        direction: DESC
   - type: table
     name: Short listed (+dismissed)
     filters:
@@ -322,7 +364,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf in USA (+dismissed)
+    name: Location - USA (+dismissed)
     filters:
       and:
         - country == "USA"
@@ -342,7 +384,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf in USA (-dismissed)
+    name: Location - USA (-dismissed)
     filters:
       and:
         - country == "USA"
@@ -362,7 +404,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf outside USA (+dismissed)
+    name: Location - Out of USA (+dismissed)
     filters:
       and:
         - country != "USA"
@@ -382,7 +424,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Conf outside USA (-dismissed)
+    name: Location - Out of USA (-dismissed)
     filters:
       and:
         - country != "USA"
@@ -402,7 +444,7 @@ views:
       - property: cfp_close
         direction: ASC
   - type: table
-    name: Online (+dismissed)
+    name: Location - Online (+dismissed)
     filters:
       and:
         - country == "Online"
@@ -425,7 +467,7 @@ views:
       note.event_date: 139
       note.location: 127
   - type: table
-    name: Online (-dismissed)
+    name: Location - Online (-dismissed)
     filters:
       and:
         - country == "Online"
@@ -448,7 +490,7 @@ views:
       note.event_date: 139
       note.location: 127
   - type: table
-    name: Local events (+dismissed)
+    name: Location - Local (+dismissed)
     filters:
       and:
         - 'formula.is_in_data'
@@ -495,7 +537,7 @@ views:
       note.cfp_url: 253
       note.event_url: 212
   - type: table
-    name: Local events (-dismissed)
+    name: Location - Local (-dismissed)
     filters:
       and:
         - 'formula.is_live'
