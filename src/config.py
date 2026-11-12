@@ -30,7 +30,7 @@ INPUT_SOURCES = [
 # row.
 MANUAL_INPUT_FILES = [
     "gmail1.md",
-    #"conferences-to-check.md"
+    "conferences-to-check.md",
 ]
 
 

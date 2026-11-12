@@ -136,6 +136,81 @@ class TestManualInputFiles(unittest.TestCase):
                     self.assertEqual(pmi.main(), 1)
 
 
+class TestWatchlistEndToEnd(unittest.TestCase):
+    """The manual CLI processes the checklist via a pre-seeded HTML cache, offline."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.input_dir = self.root / "input"
+        self.input_dir.mkdir()
+        self.out = self.root / "data"
+        self.cache = self.root / "cache"
+        self.cache.mkdir()
+        shutil.copy(ROOT / "input" / "gmail1.md", self.input_dir / "gmail1.md")
+        shutil.copy(ROOT / "input" / "conferences-to-check.md", self.input_dir / "conferences-to-check.md")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def cache_page(self, url: str, fixture: str) -> None:
+        import hashlib
+
+        target = self.cache / (hashlib.sha256(url.encode()).hexdigest()[:20] + ".html")
+        target.write_text(
+            (ROOT / "tests" / "fixtures" / "watchlist" / fixture).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    def run_cli(self) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [
+                sys.executable, str(ROOT / "src" / "process-manual-input.py"),
+                "--out", str(self.out), "--input", str(self.input_dir),
+                "--cache", str(self.cache),
+            ],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+
+    def test_writes_table_and_discovered_notes_offline(self) -> None:
+        self.cache_page("https://ai.engineer/", "no-cfp.html")
+        self.cache_page("https://www.humanx.co/", "humanx-site.html")
+        self.cache_page("https://www.humanx.co/europe/become-a-speaker", "humanx-speaker.html")
+        self.cache_page("https://newyork.theaisummit.com/", "aisummit-site.html")
+        self.cache_page("https://newyork.theaisummit.com/conference-speakers/call-for-papers/", "aisummit-cfp.html")
+        proc = self.run_cli()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("watchlist: 2 CFP link(s) found, 1 unresolved", proc.stdout)
+        self.assertIn("found 7 (new 7, updated 0, unchanged 0)", proc.stdout)
+        human = self.out / "2027/2027_humanx-amsterdam-2027.md"
+        self.assertTrue(human.is_file())
+        self.assertIn("event_date: 2027-09-20", human.read_text())
+        summit = self.out / "2026/2026_the-ai-summit-new-york.md"
+        self.assertIn("cfp_close: Unstated", summit.read_text())
+
+    def test_invalid_today_fails_before_any_fetch_or_write(self) -> None:
+        with mock.patch.object(sys, "argv", [
+            "x", "--out", str(self.out), "--input", str(self.input_dir),
+            "--today", "2026-11-32",
+        ]):
+            self.assertEqual(pmi.main(), 1)
+        self.assertFalse(list(self.out.rglob("*.md")))
+
+    def test_fetch_failure_does_not_write_partial_notes(self) -> None:
+        # Only the failing AI Engineer cache when the actual checklist has three
+        # sites: one missing page is fatal, rather than a reason to archive notes.
+        with (
+            mock.patch.object(pmi.watchlist, "resolve", return_value=pmi.watchlist.CfpResult(
+                "Down", "https://down.example", error="TimeoutError", failed=True
+            )),
+            mock.patch.object(sys, "argv", [
+                "x", "--out", str(self.out), "--input", str(self.input_dir),
+            ]),
+        ):
+            self.assertEqual(pmi.main(), 1)
+        self.assertFalse(list(self.out.rglob("*.md")))
+
+
 class TestMainEndToEnd(unittest.TestCase):
     def test_runs_offline_and_writes_only_the_configured_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -146,6 +221,9 @@ class TestMainEndToEnd(unittest.TestCase):
             # to it is not a source just because it lands in the directory.
             shutil.copy(FIX / "input.sample.md", input_dir / "gmail1.md")
             shutil.copy(FIX / "input.sample.md", input_dir / "scratch.md")
+            # The configured checklist exists, but no links means this table-only
+            # test must not need the network. The duplicate scratch table is not.
+            (input_dir / "conferences-to-check.md").write_text("# Nothing selected\n")
             proc = subprocess.run(
                 [
                     sys.executable,

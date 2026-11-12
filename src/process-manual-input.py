@@ -5,6 +5,10 @@ Only the files named in ``config.MANUAL_INPUT_FILES`` are read, resolved inside
 ``--input``. Scraps, checklists, and newly dropped files under ``input/`` are not
 CFP sources until they are explicitly listed. To opt in to another file, add its
 basename there; to remove one, comment its entry out.
+
+Two opt-in file shapes coexist in that list: markdown CFP tables (no network),
+and checklists of ``- [Conference](https://event-url/)`` links (discovered only
+on the site itself, by ``src/watchlist.py``). Every other row is still ignored.
 """
 from __future__ import annotations
 
@@ -13,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 from urllib.parse import unquote
+
+import watchlist
 
 # Markdown link in a table cell: ``[text](url)`` (optional title).
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -147,7 +153,23 @@ def main() -> int:
     ap.add_argument("--out", default="data")
     ap.add_argument("--input", default="input")
     ap.add_argument("--manifest", default=None)
+    ap.add_argument(
+        "--cache", default=None,
+        help="Optional fetched-HTML cache for watchlists (default: fetch live).",
+    )
+    ap.add_argument(
+        "--today", default=None,
+        help="YYYY-MM-DD cutoff for watchlist CFP closes (default: today's date).",
+    )
     args = ap.parse_args()
+    if args.today:
+        import datetime
+
+        try:
+            datetime.date.fromisoformat(args.today)
+        except ValueError:
+            print(f"manual input: --today must be YYYY-MM-DD, got {args.today!r}", file=sys.stderr)
+            return 1
 
     base = Path(".").resolve()
     input_dir = (base / args.input).resolve()
@@ -167,8 +189,51 @@ def main() -> int:
         return 1
 
     rows = []
+    checked = []
     for md in files:
-        rows.extend(parse_rows(md.read_text(encoding="utf-8")))
+        text = md.read_text(encoding="utf-8")
+        rows.extend(parse_rows(text))
+        checked.extend(watchlist.parse_entries(text))
+
+    # A watchlist is not a table: the list supplies only conference names and
+    # sites, and their submission pages supply the details. If every site asks
+    # to sign up rather than to present, that is reported but not treated as a
+    # found CFP. A fetch failure stops the source with a clean message so an
+    # incomplete manifest cannot orphan yesterday's notes during archiving.
+    cache = (base / args.cache).resolve() if args.cache else None
+    watch_found = 0
+    failed = 0
+    for entry in checked:
+        result = watchlist.resolve(entry, cache=cache, today=args.today)
+        if result.error:
+            failed += int(result.failed)
+            print(
+                f"manual input: {entry['name']}: CFP unresolved ({result.error})",
+                file=sys.stderr,
+            )
+            continue
+        watch_found += 1
+        print(f"manual input: {entry['name']} -> {result.cfp_url}")
+        rows.append(
+            {
+                "name": result.name,
+                "location": result.location,
+                "cfp_close": result.cfp_close,
+                "event_date": result.event_date,
+                "topics": "",
+                "event_url": result.event_url,
+                "cfp_url": result.cfp_url,
+            }
+        )
+    if failed:
+        print(
+            f"manual input: {failed} watchlist page(s) could not be fetched; "
+            "aborting before writing notes so existing notes are not orphaned",
+            file=sys.stderr,
+        )
+        return 1
+    if checked:
+        print(f"watchlist: {watch_found} CFP link(s) found, {len(checked) - watch_found} unresolved")
 
     counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
     produced = []

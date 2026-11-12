@@ -158,7 +158,7 @@ Merged into `data/`:
 - **Open Tech CFPs** — public `open.json` + `closed.json`, CC BY 4.0, Sessionize-derived.
   Filter `cfp_close_utc`, not `status`; map only explicit travel/accommodation coverage to benefits.
   It ranks lowest and fills gaps.
-- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`).
+- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`); `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`. Explicitly closed submission pages and closes before `--today` are skipped.
 
 When two sources carry the same conference (same slug), the higher-priority one owns the note:
 `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`. A lower-priority source skips a note
@@ -186,6 +186,7 @@ file and the README in the same change.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
+- `src/watchlist.py` — parses explicit checklist bullets and discovers a conference site's own CFP link; extracts only stated dates/metadata.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — HTTP liveness sweep over a report's links.
 - `prestige.md` — the curated conference ranking (tier 1/2/3), edited by hand.

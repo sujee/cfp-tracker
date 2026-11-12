@@ -96,6 +96,7 @@ Everything an agent needs is here, deliberately:
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
 - `src/process-manual-input.py` — merges hand-curated `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`).
+- `src/watchlist.py` — resolves `- [Conference](url)` checklists to CFP pages and event metadata.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
@@ -265,6 +266,22 @@ currently change nothing the base reads. Kept for reference / if the report retu
   copy.
 - **Manual input reads only explicitly listed files — no `input/*.md` sweep.**
   `MANUAL_INPUT_FILES` in `src/config.py` lists relative file paths (usually basenames) inside `input/`; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
+- **A manual file may instead be a website checklist.** In the same explicitly listed
+  `MANUAL_INPUT_FILES`, `- [Conference](https://event/)` bullets (also `*` / `+`) are
+  watched, not searched: `src/watchlist.py` fetches that page, chooses only an explicit
+  speaker-submission link (Call for Papers / Apply to Speak / …), and reads it once.
+  Generic speaker rosters and empty links are not CFPs. JSON-LD `Event` metadata wins;
+  an absent event date stays `TBA`, no venue is invented unless structured metadata
+  supplies it, and a close is read only near words like "deadline" or "closes" —
+  otherwise `Unstated`, never the event date. Unresolved entries are reported, not
+  fabricated. A fetch failure aborts the manual step *before* writing so the manifest
+  cannot orphan existing notes. `--cache DIR` supplies an optional hashed HTML cache
+  (otherwise it always fetches live); process-manual-input accepts `--out`, `--input`,
+  `--manifest` as before. A submission page explicitly saying applications/CFP/
+  submissions are closed is **not** a discovered CFP; likewise a parsed close before
+  today is skipped (`close >= today` remains eligible). `--today YYYY-MM-DD` gives the
+  cutoff, or reproduces a past run. CFP pages are read as HTML only, with no browser/JS.
+  Unstated close and unknown status stay conservative placeholders, not skipped.
 - **Manual input rows are markdown tables.** The first column may be a link
   (`**[Name](url)**`): the parser takes the link *text* as `name`, the link as `event_url`
   (unwrapping Google `.../url?...&q=<real>` redirects), and strips emphasis. Without this the

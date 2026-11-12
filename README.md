@@ -236,7 +236,7 @@ A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `Y
 | **confs.tech** | [tech-conferences/conference-data](https://github.com/tech-conferences/conference-data) (MIT). Has `cfpUrl` + `cfpEndDate`; no `ai` topic file, so AI events sit under `general` or a language topic. |
 | **adato-tracker** | The `tablesorter` table on [adatosystems.com/cfp-tracker](https://adatosystems.com/cfp-tracker/) (Leon Adato). Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates other feeds and only fills gaps. |
 | **Open Tech CFPs** | Public [open/closed JSON](https://github.com/1kevgriff/OpenTechCFPs), filtered by exact `cfp_close_utc`. Includes topics and explicit travel/hotel coverage; lowest-priority gap filler. Data: CC BY 4.0. |
-| **Manual input** | Only files named in `MANUAL_INPUT_FILES` (`src/config.py`) are read from `input/`; no `input/*.md` sweep. |
+| **Manual input** | Only files named in `MANUAL_INPUT_FILES` (`src/config.py`) are read from `input/`; no `input/*.md` sweep. Rows may be CFP tables, or a checklist of `- [Conference](url)` submission-site links resolved by `src/watchlist.py` (when online). |
 
 Open Tech CFPs data attribution: **Open Tech CFPs, https://github.com/1kevgriff/OpenTechCFPs** ([CC BY 4.0](https://github.com/1kevgriff/OpenTechCFPs/blob/main/LICENSE-DATA)).
 
