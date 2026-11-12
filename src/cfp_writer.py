@@ -643,6 +643,64 @@ def _write_if_changed(path: Path, text: str) -> str:
     return "updated" if existed else "new"
 
 
+def set_property(path: Path, key: str, value) -> str:
+    """Set one top-level scalar frontmatter property in place.
+
+    Used by registry-driven taggers (``apply-prestige.py`` writing ``tier``) so a
+    curated value can land on a note without :func:`upsert` re-rendering it: the
+    body notes, every other property, the key order, and the ``created`` /
+    ``updated`` stamps are left byte-for-byte alone. Only the ``---`` block is
+    touched, and only the one key line.
+
+    Returns ``"updated"`` when the file changed and ``"unchanged"`` when the key
+    already held the value (nothing is written, so mtimes stay put). A file with
+    no frontmatter block is ``"unchanged"`` — it is not a CFP note.
+
+    Raises:
+        FrontmatterError: the ``---`` block is present but not valid YAML, so the
+            caller can skip the note instead of clobbering it.
+    """
+    text = path.read_text(encoding="utf-8")
+    fm, _ = _read_frontmatter_text(text)
+    if not fm:
+        return "unchanged"
+    # Numeric values (``tier``) stay unquoted on purpose: a YAML scalar ``1`` is
+    # read back as a number, so an Obsidian Bases filter can compare ``tier == 1``.
+    # ``_yaml_str`` would quote it (it "looks like" an int), which is right for the
+    # string fields but wrong here.
+    rendered = str(int(value)) if isinstance(value, int) and not isinstance(value, bool) else _yaml_str(value)
+
+    m = _FM_RE.match(text)
+    if not m:
+        return "unchanged"
+    fm_text = m.group("fm")
+    fm_lines = fm_text.split("\n")
+    key_re = re.compile(rf"^{re.escape(key)}\s*:")
+
+    new_line = f"{key}: {rendered}"
+    for i, line in enumerate(fm_lines):
+        if not key_re.match(line):
+            continue
+        # Drop any indented continuation (block scalar / nested map) that belongs
+        # to the old value before replacing it, so no orphan lines are left behind.
+        end = i + 1
+        while end < len(fm_lines) and fm_lines[end][:1] in (" ", "\t"):
+            end += 1
+        fm_lines[i:end] = [new_line]
+        break
+    else:
+        fm_lines.append(new_line)
+
+    new_fm = "\n".join(fm_lines)
+    if new_fm == fm_text:
+        return "unchanged"
+    updated = text[: m.start("fm")] + new_fm + text[m.end("fm") :]
+    if updated == text:
+        return "unchanged"
+    path.write_text(updated, encoding="utf-8")
+    return "updated"
+
+
 def _event_type_for(fm: dict, row: dict) -> str:
     """Return a sticky existing event type, or infer one when it is unset."""
     existing = _as_str(fm.get("event_type")).strip()

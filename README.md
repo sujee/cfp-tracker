@@ -150,11 +150,40 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 | **Upcoming (> -30 days)** | Open CFPs plus those that closed in the last 30 days. |
 | **Closed (90d)** | CFPs that closed 30 to 90 days ago, for recap. |
 | **Short listed** | Notes you flagged `shortlist: true`. |
+| **Prestigious** | Notes with a curated `tier` of 1 or 2, sorted by tier then CFP close. The ranking comes from `prestige.md`, not from any feed. |
 | **Dismissed (+dismissed)** | Only dismissed notes. The minus version is empty by definition. |
 | **Archived (+dismissed) / Archived (-dismissed)** | Archived notes with or without dismissed notes. |
 | **Submitted** | Notes with at least one wiki link under `submissions`. |
 | **Location - USA / Location - Out of USA / Location - Online** | Geography filters. |
 | **Location - Local** | Events in The San Francisco Bay Area, which is my area (feel free to tweak it to yours). Matches local cities in `location`. |
+
+## Prestige ranking
+
+Feeds carry deadlines, not reputations, so the "is this a conference worth speaking at"
+judgement is curated by hand in [`prestige.md`](prestige.md) — a plain table:
+
+```md
+| conf name | ranking | keywords |
+| :--- | :---: | :--- |
+| FOSDEM | 1 | fosdem |
+| KubeCon + CloudNativeCon | 1 | kubecon, cloudnativecon |
+| KotlinConf | 2 | kotlinconf |
+| Voxxed Days | 3 | voxxed |
+```
+
+`python3 src/apply-prestige.py` reads it and stamps a numeric `tier` onto every note whose
+`event_name` matches a row (`1` flagship, `2` major, `3` notable). `process-all.py` runs this
+last automatically. `tier` is separate from `shortlist`: the tier is the conference's
+reputation, the shortlist is your interest.
+
+```bash
+python3 src/apply-prestige.py --check    # per-row match counts; writes nothing
+```
+
+`--check` is the safety net: a row that matches **nothing** is either a flagship no feed
+carries (re:Invent, Google I/O, Microsoft Build, WWDC, PyCon US, NeurIPS, USENIX ATC, GOTO…)
+or a typo. Either way it needs your attention, and a wrong keyword shows up as a count that
+is obviously too big.
 
 ## Sample Workflow
 
@@ -176,6 +205,8 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 | `--no-archive` | Keep orphaned notes instead of archiving them |
 | `--archive DIR` | Archive orphans somewhere other than `archived/` |
 | `--input DIR` | Read manual rows from DIR instead of `input/` |
+| `--prestige FILE` | Rank from FILE instead of `prestige.md` |
+| `--no-prestige` | Do not stamp curated `tier` values |
 
 Run a single source:
 
@@ -195,6 +226,7 @@ find -L data -name '*.md' | wc -l          # note count, through the symlink
 python3 src/archive-orphans.py --dry-run   # what would be archived
 python3 src/check-links.py tmp/cfps.md     # HTTP liveness sweep
 python3 src/normalize-data.py              # re-emit notes to the current shape (idempotent)
+python3 src/apply-prestige.py --check      # prestige.md vs the notes; nothing matched? why
 ```
 
 A healthy note opens with a `---` YAML frontmatter block, and `event_date` is `YYYY-MM-DD` (start date only) or `TBA`. Notes whose resolved `event_type` is excluded by `EVENT_TYPES` are omitted from the live CFP tree and moved to `archived/`; explicit allowed event-type overrides are preserved.
@@ -219,6 +251,7 @@ Details and HTTP-verified status: [`cfp-sources.md`](docs/cfp-sources.md).
 ## Repo layout
 
 - `src/`: the pipeline. `process-all.py` runs every source; one `process-*.py` per source; `cfp_writer.py` writes notes; `country.py`, `archive-orphans.py`, `check-links.py`, `normalize-data.py` are helpers.
+- `prestige.md`: the curated conference ranking (tier 1/2/3) applied by `src/apply-prestige.py`; `src/prestige.py` is its loader/matcher.
 - `data/`, `archived/`: symlinks into the vault (gitignored; created in Quick start).
 - `input/`: hand-curated rows (highest-priority source).
 - `tests/`: stdlib `unittest` suite; fixtures are real slices of the downloaded data.

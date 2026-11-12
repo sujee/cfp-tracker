@@ -34,6 +34,10 @@ adato-tracker, Open Tech CFPs, and any hand-curated rows in `input/*.md`.
   `archived/` symlink into the vault (see below); the run reports how many. `--no-archive`
   skips this; `--archive DIR` changes the destination (default: `archived/` beside the resolved
   `--out` directory).
+- Last, `src/apply-prestige.py` stamps the curated `tier` (1/2/3) from `prestige.md` onto the
+  matching notes. It runs inside `process-all.py` (`--no-prestige` skips it, `--prestige FILE`
+  points at another table). A note matching no row keeps whatever `tier` it has, so a hand-set
+  ranking survives.
 - After a schema change, run `python3 src/normalize-data.py` to re-emit existing notes to the
   current shape (drops any frontmatter `notes`, re-quotes values, canonicalises `country` via
   `src/country.py`, back-fills missing `created`/`updated` stamps). It is idempotent.
@@ -55,6 +59,9 @@ adato-tracker, Open Tech CFPs, and any hand-curated rows in `input/*.md`.
      report what you actually got, do not force old numbers.
 5. Report the new note count, the path, and anything suspicious. The summary's source × event-type
    matrix counts live notes after deduplication and archiving; ★ marks enabled `EVENT_TYPES`.
+6. `python3 src/apply-prestige.py --check` — every tier-1/2 row should match at least one note,
+   except the ones deliberately listed as flagships no feed carries. A row with an unexpected
+   count means its `keywords` are too broad (or too narrow); fix `prestige.md`, then re-run.
 
 ## Testing (any code change)
 
@@ -123,6 +130,13 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   deadline strings. The scripts fetch the JSON live.
 - Rows are copied from the sources, not curated by hand. If a value looks wrong, check the
   source before "fixing" it in a note.
+- `tier` is the exception, and it is not a source field: it is curated in `prestige.md` and
+  applied by `src/apply-prestige.py`. Change a ranking there, not in a note — on a matched note
+  the registry wins. A hand-set `tier` on a note that matches **no** row is kept, so a one-off
+  can be ranked directly. `tier` is never compared against source data, so stamping it does not
+  advance `updated`.
+- Do not put `prestige.md` in `input/`: `src/process-manual-input.py` reads every `input/*.md`
+  table row with five or more columns as a CFP, so the ranking table would become conferences.
 - Do not commit or push anything to git unless asked. Always ask permission first — never
   commit or push automatically.
 
@@ -170,6 +184,8 @@ file and the README in the same change.
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — HTTP liveness sweep over a report's links.
+- `prestige.md` — the curated conference ranking (tier 1/2/3), edited by hand.
+- `src/prestige.py` — loads and matches `prestige.md`; `src/apply-prestige.py` stamps `tier`.
 - `docs/cfp-sources.md` — source index; `docs/sources/` holds one detail page per source.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync`, then
   `uv run python src/…`.

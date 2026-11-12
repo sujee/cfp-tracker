@@ -1685,5 +1685,93 @@ class TestCfpTemplate(unittest.TestCase):
         self.assertTrue(keys <= self.REQUIRED | self.OPTIONAL, f"unknown: {keys - self.REQUIRED - self.OPTIONAL}")
 
 
+class SetPropertyTestCase(unittest.TestCase):
+    """``set_property`` — the registry-driven tagger's one-key writer."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.data = Path(self._tmp.name)
+        cw.reset_cfp_url_index()
+        self.path = self.data / "2026" / "2026-11-30_power-platform-days-barcelona-2026.md"
+        cw.upsert(self.data, sample_row(), today="2026-11-01")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_inserts_a_new_property_before_the_closing_block(self) -> None:
+        self.assertEqual(cw.set_property(self.path, "tier", 1), "updated")
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("\ntier: 1\n---\n", text)
+        fm, _ = cw._read_frontmatter(self.path)
+        self.assertEqual(fm["tier"], 1)
+
+    def test_is_idempotent(self) -> None:
+        cw.set_property(self.path, "tier", 2)
+        before = self.path.read_text(encoding="utf-8")
+        self.assertEqual(cw.set_property(self.path, "tier", 2), "unchanged")
+        self.assertEqual(self.path.read_text(encoding="utf-8"), before)
+
+    def test_replaces_without_duplicating(self) -> None:
+        cw.set_property(self.path, "tier", 3)
+        self.assertEqual(cw.set_property(self.path, "tier", 1), "updated")
+        text = self.path.read_text(encoding="utf-8")
+        self.assertEqual(text.count("tier:"), 1)
+        self.assertEqual(cw._read_frontmatter(self.path)[0]["tier"], 1)
+
+    def test_does_not_touch_anything_else(self) -> None:
+        text = self.path.read_text(encoding="utf-8")
+        before, _ = cw._read_frontmatter(self.path)
+        self.path.write_text(
+            text.replace("_Add notes here._", "Great audience. **Submit this.**"),
+            encoding="utf-8",
+        )
+        cw.set_property(self.path, "tier", 2)
+        afters = self.path.read_text(encoding="utf-8")
+        fm, body = cw._read_frontmatter(self.path)
+        self.assertIn("Great audience. **Submit this.**", body)
+        self.assertEqual(fm["shortlist"], False)
+        # Stamps track source rewrites, not curation.
+        self.assertEqual(cw._as_str(fm["created"]), cw._as_str(before["created"]))
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01")
+        self.assertIn("tier: 2", afters)
+
+    def test_writer_preserves_the_property_on_a_later_refresh(self) -> None:
+        cw.set_property(self.path, "tier", 1)
+        # An unchanged refresh rewrites nothing and keeps the tier.
+        self.assertEqual(cw.upsert(self.data, sample_row(), today="2026-11-02"), "unchanged")
+        self.assertEqual(cw._read_frontmatter(self.path)[0]["tier"], 1)
+        # A real source change rewrites the note; the tier survives and `updated`
+        # advances.
+        changed = sample_row(location="Barcelona")
+        self.assertEqual(cw.upsert(self.data, changed, today="2026-11-02"), "updated")
+        fm, _ = cw._read_frontmatter(self.path)
+        self.assertEqual(fm["tier"], 1)
+        self.assertEqual(fm["location"], "Barcelona")
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-02")
+
+    def test_updated_stamp_is_not_advanced_by_curation(self) -> None:
+        cw.set_property(self.path, "tier", 3)
+        fm, _ = cw._read_frontmatter(self.path)
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01")
+
+    def test_unparseable_frontmatter_raises(self) -> None:
+        bad = self.data / "bad.md"
+        bad.write_text("---\ntier: [unclosed\n---\n\n## Notes\n", encoding="utf-8")
+        with self.assertRaises(cw.FrontmatterError):
+            cw.set_property(bad, "tier", 1)
+        self.assertIn("[unclosed", bad.read_text(encoding="utf-8"))  # untouched
+
+    def test_file_without_frontmatter_is_left_alone(self) -> None:
+        plain = self.data / "plain.md"
+        plain.write_text("just text\n", encoding="utf-8")
+        self.assertEqual(cw.set_property(plain, "tier", 1), "unchanged")
+        self.assertEqual(plain.read_text(encoding="utf-8"), "just text\n")
+
+    def test_string_values_stay_safely_quoted(self) -> None:
+        cw.set_property(self.path, "note", "Agentics Day: MCP + Agents")
+        fm, _ = cw._read_frontmatter(self.path)
+        self.assertEqual(fm["note"], "Agentics Day: MCP + Agents")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

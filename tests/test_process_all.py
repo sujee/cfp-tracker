@@ -168,6 +168,66 @@ class TestPipelineWiring(unittest.TestCase):
         ]
         self.assertIn(open_tech_manifest, manifests)
 
+    def test_prestige_step_runs_last_with_the_curated_table(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            argv = [
+                "process-all.py",
+                "--out", str(data_dir),
+                "--input", str(Path(tmp) / "missing-input"),
+                "--prestige", str(ROOT / "prestige.md"),
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(pa.subprocess, "run", return_value=completed) as run,
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(pa.main(), 0)
+
+        commands = [call.args[0] for call in run.call_args_list]
+        prestige = next(
+            command for command in commands
+            if any(part.endswith("apply-prestige.py") for part in command)
+        )
+        self.assertIn(str(data_dir.resolve()), prestige)
+        self.assertEqual(
+            prestige[prestige.index("--list") + 1], str((ROOT / "prestige.md").resolve())
+        )
+        # Tier stamping must happen after archiving, or a note could be ranked and
+        # then moved.
+        archive_at = next(
+            i for i, c in enumerate(commands) if any(p.endswith("archive-orphans.py") for p in c)
+        )
+        prestige_at = next(
+            i for i, c in enumerate(commands) if any(p.endswith("apply-prestige.py") for p in c)
+        )
+        self.assertGreater(prestige_at, archive_at)
+
+    def test_no_prestige_skips_the_step(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            argv = [
+                "process-all.py",
+                "--out", str(data_dir),
+                "--input", str(Path(tmp) / "missing-input"),
+                "--no-prestige",
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(pa.subprocess, "run", return_value=completed) as run,
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(pa.main(), 0)
+
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertFalse(
+            any(any(part.endswith("apply-prestige.py") for part in c) for c in commands)
+        )
+
     def test_invalid_event_types_fail_before_sources_or_archiving(self) -> None:
         argv = ["process-all.py", "--out", "unused", "--input", "also-unused"]
         with (

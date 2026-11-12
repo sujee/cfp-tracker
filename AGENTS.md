@@ -100,6 +100,11 @@ Everything an agent needs is here, deliberately:
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — HTTP liveness sweep over a report's links.
+- `prestige.md` — the hand-curated conference ranking (`conf name | ranking | keywords`) that
+  `src/apply-prestige.py` turns into each note's `tier`. Judgment, not data: no feed carries
+  attendance, acceptance rate, or program pedigree.
+- `src/prestige.py` — parses `prestige.md` and matches a note name to a tier.
+- `src/apply-prestige.py` — stamps `tier`; `--check` reports per-row match counts and writes nothing.
 - `docs/cfp-sources.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
@@ -144,7 +149,13 @@ dismissed: false               # user flag, defaults false and preserved across 
 submissions: []                # wiki links (a list), preserved across runs
 created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
 updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
+tier: 1                        # optional; curated from prestige.md (1 flagship, 2 major, 3 notable)
 ```
+
+`tier` is written by `src/apply-prestige.py`, not by `src/cfp_writer.py`, and appears only on
+notes a `prestige.md` row matches. It is a *number* (`tier: 1`, unquoted) so a Bases filter can
+compare `tier == 1`; it is not in `KNOWN_FM_KEYS`, so the writer treats it as user metadata and
+re-emits it verbatim on every rewrite.
 
 Then a body with a `## Notes` heading and the free-form notes. **Notes live only in the body**
 — there is no `notes` frontmatter field.
@@ -329,6 +340,39 @@ currently change nothing the base reads. Kept for reference / if the report retu
   file, never the events file.
 - Dedupe is by `(normalized name, close date)`; the same conference can legitimately reappear
   with a revised deadline.
+- **`tier` is curated, not derived — and it must never be inferred from feed data.** No source
+  carries attendance, acceptance rate, or program pedigree, so any "prestige score" computed
+  from what the feeds give you (deadline length, co-located events, benefits) would just measure
+  which aggregator carried the row. `prestige.md` is the source of truth; `apply-prestige.py`
+  only applies it. Two consequences: a tier-3 family series legitimately covers dozens of notes
+  (`bsides` ≈ 24, `conf42` ≈ 28), and a *tier-1/2* keyword matching more than ~12 notes is a
+  bug — the keyword is too broad.
+- **Keyword matching is exact-per-word, plus a trailing year, and nothing else.**
+  `srecon` must match `SREcon27 Americas` and `offensivecon` must match `OffensiveCon26`, so the
+  matcher allows a name word to equal a keyword word *plus digits*. It deliberately does **not**
+  allow any other suffix: `engineer` must not match `engineering` (or `AI Engineer` swallows
+  `AI Engineering Summit`), and `scale` must not match `Build, Secure, Scale`. A name that glues
+  a non-year suffix needs its own explicit keyword (`scale 24x`). This is precision over recall
+  on purpose — `--check` surfaces the misses, and the fix is one more comma-separated keyword.
+- **A row may legitimately match nothing.** Rows for flagships no feed carries (re:Invent,
+  Google I/O, Cloud Next, Microsoft Build, WWDC, GitHub Universe, PyCon US, NeurIPS, ICML, ICLR,
+  USENIX ATC, OSDI, GOTO, SIGMOD, VLDB, CVPR) sit in the same table on purpose: `--check` listing
+  them as "matches nothing" *is* the coverage-gap report, and they start matching the day one
+  appears in `input/*.md`. Never "clean up" a zero-match row without checking whether it is a
+  gap row or a typo.
+- **A zero-match row is not a failure, but a malformed row is.** `int(ranking)` and an empty
+  `keywords` cell raise `ValueError` with the line number, so a typo fails the run instead of
+  silently ranking a conference nowhere. Only tables whose header is `conf name | ranking |
+  keywords` are parsed, which is why the rubric table in the same file is ignored.
+- **The registry wins on a matched note; a hand-set tier survives on an unmatched one.**
+  `apply-prestige.py` writes `tier` only when a row matches, so a note matching no row keeps its
+  value (rank a one-off by editing the note). `--check` reports those as "tier set but no rule
+  matches" so they do not rot. `tier` is never in `SOURCE_SCALAR_FIELDS`: it is not compared
+  against source data, so stamping it does not advance `updated`, and the writer re-emits it
+  verbatim as user metadata.
+- **`prestige.md` must not live in `input/`.** `src/process-manual-input.py` reads every
+  `input/*.md` table row with five or more columns as a CFP; the ranking table would become
+  conferences. It lives at the repo root, and `apply-prestige.py` finds it there.
 
 ## Verification
 
@@ -337,6 +381,10 @@ currently change nothing the base reads. Kept for reference / if the report retu
 - Every note under `data/` parses as valid YAML frontmatter, `event_date` is `YYYY-MM-DD`
   (or `TBA`), and `event_type` is nonempty (inferred or manually curated).
 - `python3 src/normalize-data.py` is idempotent — running it twice leaves the tree unchanged.
+- `python3 src/apply-prestige.py` is idempotent too, and every `tier` value is `1`, `2`, or `3`.
+  `--check` should show a non-zero count for every tier-1/2 row except the deliberate gap rows;
+  a note in the "tier set but no rule matches" list is either a one-off you ranked by hand or a
+  row you deleted from `prestige.md`.
 - Counts legitimately move between runs: upstream revises deadlines and adds events daily, so a
   refresh gaining or losing a handful of notes is normal. Diff against the source data at run
   time, not against the previous state — a stale run is not the baseline.

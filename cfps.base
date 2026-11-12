@@ -13,6 +13,9 @@ formulas:
   is_archived: '("/" + file.path).contains("/" + formula.archived_dir)'
   is_dismissed: 'dismissed == true || dismissed == "true"'
   is_live: 'formula.is_in_data && !formula.is_dismissed'
+  # Curated ranking stamped by src/apply-prestige.py from prestige.md
+  # (1 = flagship, 2 = major, 3 = notable). Absent -> not ranked.
+  is_prestigious: 'tier == 1 || tier == 2'
 properties:
   formula.cfp_title:
     displayName: Event
@@ -20,6 +23,8 @@ properties:
     displayName: Dismissed
   shortlist:
     displayName: Shortlist
+  tier:
+    displayName: Tier
   country:
     displayName: Country
   event_date:
@@ -44,6 +49,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -70,6 +76,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -90,12 +97,69 @@ views:
       note.event_url: 153
       note.cfp_url: 169
   - type: table
+    name: Prestigious (+dismissed)
+    filters:
+      and:
+        - 'formula.is_in_data'
+        - 'formula.is_prestigious'
+    order:
+      - cfp_close
+      - tier
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: tier
+        direction: ASC
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      note.tier: 56
+      formula.cfp_title: 274
+      note.location: 201
+  - type: table
+    name: Prestigious (-dismissed)
+    filters:
+      and:
+        - 'formula.is_live'
+        - 'formula.is_prestigious'
+    order:
+      - cfp_close
+      - tier
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+      - source
+      - event_url
+      - cfp_url
+    sort:
+      - property: tier
+        direction: ASC
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      note.tier: 56
+      formula.cfp_title: 274
+      note.location: 201
+  - type: table
     name: Recently Updated (+dismissed)
     filters:
       and:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - updated
@@ -116,6 +180,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - updated
@@ -137,6 +202,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -157,6 +223,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -177,6 +244,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -204,6 +272,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -231,6 +300,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -251,6 +321,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -271,6 +342,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -300,6 +372,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -330,6 +403,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -351,6 +425,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -371,6 +446,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -391,6 +467,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -411,6 +488,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -431,6 +509,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -451,6 +530,7 @@ views:
         - 'formula.is_in_data'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -474,6 +554,7 @@ views:
         - 'formula.is_live'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -518,6 +599,7 @@ views:
             - location.contains("Bay Area")
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -565,6 +647,7 @@ views:
             - location.contains("Bay Area")
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -591,6 +674,7 @@ views:
         - 'formula.is_dismissed'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -612,6 +696,7 @@ views:
         - '!formula.is_dismissed'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -631,6 +716,7 @@ views:
         - formula.is_archived
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title
@@ -651,6 +737,7 @@ views:
         - '!formula.is_dismissed'
     order:
       - cfp_close
+      - tier
       - shortlist
       - dismissed
       - formula.cfp_title

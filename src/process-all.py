@@ -197,6 +197,14 @@ def main() -> int:
         help="Folder for notes no source produces any more (default: 'archived' beside --out).",
     )
     ap.add_argument("--no-archive", action="store_true", help="Do not archive orphan notes.")
+    ap.add_argument(
+        "--prestige",
+        default=None,
+        help="Curated ranking table; default prestige.md at the repo root when present.",
+    )
+    ap.add_argument(
+        "--no-prestige", action="store_true", help="Do not stamp curated prestige tiers."
+    )
     args, rest = ap.parse_known_args()
     included = included_event_types()  # Fail invalid config before notes or archives change.
 
@@ -253,6 +261,26 @@ def main() -> int:
                 return proc.returncode
             m = re.search(r"archive-orphans: \w+ (\d+) note", proc.stdout)
             archived = int(m.group(1)) if m else 0
+
+    # Curated ranking (prestige.md) -> `tier` on the matching notes. Runs last on
+    # purpose: archiving has moved the orphans aside, and a refresh must never
+    # undo a curated value. Silent when the table is absent (a fresh clone).
+    prestige_file = (
+        Path(args.prestige).resolve() if args.prestige else here.parent / "prestige.md"
+    )
+    if not args.no_prestige and prestige_file.is_file() and data_dir.is_dir():
+        cmd = [
+            sys.executable, str(here / "apply-prestige.py"),
+            "--data", str(data_dir), "--list", str(prestige_file),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr)
+        if proc.returncode != 0:
+            print(f"step failed (exit {proc.returncode}): {cmd}", file=sys.stderr)
+            return proc.returncode
 
     print_summary(summaries, data_dir, archived, archive_dir, included)
     print("done")
