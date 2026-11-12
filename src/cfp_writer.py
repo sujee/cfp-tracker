@@ -42,21 +42,77 @@ EVENT_TYPES = (
     "other",
 )
 DEFAULT_EVENT_TYPE = "conference"
-_EVENT_TYPE_PATTERNS = (
-    ("meetup", re.compile(r"\bmeet[\s-]?ups?\b", re.IGNORECASE)),
-    ("summit", re.compile(r"\bsummits?\b", re.IGNORECASE)),
-    ("workshop", re.compile(r"\bworkshops?\b", re.IGNORECASE)),
-    ("hackathon", re.compile(r"\bhackathons?\b", re.IGNORECASE)),
-    ("webinar", re.compile(r"\bwebinars?\b", re.IGNORECASE)),
+_INFERABLE_EVENT_TYPES = tuple(
+    event_type for event_type in EVENT_TYPES if event_type not in ("conference", "other")
 )
+_DEFAULT_EVENT_TYPE_KEYWORDS = {
+    "meetup": ("meetup", "meet-up", "meet up", "user group", "user-group", "usergroup"),
+    "summit": ("summit",),
+    "workshop": ("workshop",),
+    "hackathon": ("hackathon",),
+    "webinar": ("webinar",),
+}
+
+
+def _event_type_patterns() -> tuple[tuple[str, re.Pattern], ...]:
+    """Compile and validate the ordered, configurable event-name aliases."""
+    configured = getattr(_cfg, "EVENT_TYPE_KEYWORDS", None) if _cfg is not None else None
+    if configured is None:
+        configured = _DEFAULT_EVENT_TYPE_KEYWORDS
+    if not isinstance(configured, dict):
+        raise ValueError("config.EVENT_TYPE_KEYWORDS must be a mapping of event types to keywords")
+
+    patterns = []
+    for event_type, keywords in configured.items():
+        if event_type not in _INFERABLE_EVENT_TYPES:
+            choices = ", ".join(_INFERABLE_EVENT_TYPES)
+            raise ValueError(
+                f"Unknown config.EVENT_TYPE_KEYWORDS event type {event_type!r}; "
+                f"choose from {choices}"
+            )
+        if isinstance(keywords, str) or not hasattr(keywords, "__iter__"):
+            raise ValueError("config.EVENT_TYPE_KEYWORDS values must be lists of keywords")
+        keywords = list(keywords)
+        if not keywords:
+            raise ValueError("config.EVENT_TYPE_KEYWORDS values must not be empty")
+        for keyword in keywords:
+            if not isinstance(keyword, str) or not keyword.strip():
+                raise ValueError("config.EVENT_TYPE_KEYWORDS must contain nonempty strings")
+            words = [word for word in re.split(r"[\s-]+", keyword.strip()) if word]
+            if not words:
+                raise ValueError("config.EVENT_TYPE_KEYWORDS must contain words")
+            body = r"[\s-]*".join(re.escape(word) for word in words)
+            patterns.append((event_type, re.compile(rf"\b{body}s?\b", re.IGNORECASE)))
+    return tuple(patterns)
 
 
 def infer_event_type(name: str) -> str:
     """Infer a controlled event type from *name*, defaulting to conference."""
-    for event_type, pattern in _EVENT_TYPE_PATTERNS:
+    for event_type, pattern in _event_type_patterns():
         if pattern.search(name or ""):
             return event_type
     return DEFAULT_EVENT_TYPE
+
+
+def _ignored_names() -> tuple[str, ...]:
+    """Return validated, case-folded literal event-name exclusions."""
+    configured = getattr(_cfg, "IGNORE_NAMES", ()) if _cfg is not None else ()
+    if configured is None:
+        configured = ()
+    if isinstance(configured, str) or not hasattr(configured, "__iter__"):
+        raise ValueError("config.IGNORE_NAMES must be a list of event-name fragments")
+    ignored = []
+    for value in configured:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("config.IGNORE_NAMES must contain nonempty strings")
+        ignored.append(value.strip().casefold())
+    return tuple(ignored)
+
+
+def event_name_is_ignored(name: str) -> bool:
+    """Return whether *name* contains any configured, case-insensitive fragment."""
+    folded = (name or "").strip().casefold()
+    return any(fragment in folded for fragment in _ignored_names())
 
 
 def _event_type_included(value: str) -> bool:
@@ -787,14 +843,21 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     A missing ``dismissed`` flag similarly back-fills to ``false`` without
     advancing valid stamps; an existing flag is preserved across rewrites.
 
-    ``"skipped"`` means this row deliberately wrote nothing because its resolved
-    ``event_type`` is excluded by ``config.EVENT_TYPES``, another note owns the
-    CFP: a higher-priority source already owns the same slug (see
+    ``"skipped"`` means this row deliberately wrote nothing because its name
+    matches ``config.IGNORE_NAMES``, its resolved ``event_type`` is excluded by
+    ``config.EVENT_TYPES``, another note owns the CFP: a higher-priority source
+    already owns the same slug (see
     :data:`SOURCE_PRIORITY`), the same ``cfp_url`` is already owned by a note at a
     different path, or the target's frontmatter is not valid YAML. The caller
     must not record *this* row's path as produced, or the losing note could never
     be archived (see the ``--manifest`` handling in each ``process-*.py``).
     """
+    # Validate configurable name rules before touching note paths. Ignored names
+    # and malformed settings therefore cannot create or rewrite a note.
+    _event_type_patterns()
+    if event_name_is_ignored(row.get("name")):
+        return "skipped"
+
     # Canonicalise the country label before anything compares or writes it, so
     # "United Kingdom" and "UK" from different feeds land on the same value.
     # Drop UTM tracking tags from the submission and event URLs for the same

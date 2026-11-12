@@ -37,7 +37,15 @@ CONFS_TECH_TOPICS = {
 `general.json` is always included. Use `CONFS_TECH_TOPICS = set()` to fetch every confs.tech
 category. This setting does not filter the other sources.
 
-Optionally, you can set `IGNORE_TOPICS` as well.
+`EVENT_TYPE_KEYWORDS` maps inferable event types to singular name aliases. Its mapping order controls
+precedence. Matching ignores case, treats spaces and hyphens between words as interchangeable, and
+accepts an optional plural `s`. Existing non-empty `event_type` values remain sticky, so alias changes
+affect new notes and notes without that field only.
+
+`IGNORE_NAMES` drops events whose names contain any configured string, ignoring case. Matching applies
+anywhere in the name, not only at the start. For example, `IGNORE_NAMES = [".NET"]` skips both
+`.NET Conf` and `Azure .NET Developer Days`. `IGNORE_TOPICS` separately filters configured name and
+topic/tag terms according to each source adapter.
 
 `EVENT_TYPES` is the allow-list of event types to keep. The checked-in configuration currently
 enables `conference`, `summit`, and `workshop`; other supported types are commented so you can
@@ -139,10 +147,11 @@ you keep your dashboards.
 
 A few views defined in `cfps.base` (you can customize them!)
 
-Every view has a **(+dismissed)** version and a **(-dismissed)** version. The plus version includes dismissed notes. The minus version hides them. Every view shows **Shortlist** and **Dismissed** together, immediately after **CFP close**. No view displays **Benefits** or **Submissions**.
+Every view except **Search** has a **(+dismissed)** version and a **(-dismissed)** version. The plus version includes dismissed notes. The minus version hides them. Every view shows **Shortlist** and **Dismissed** together, immediately after **CFP close**. No view displays **Benefits** or **Submissions**.
 
 | View | What it shows |
 |---|---|
+| **Search** | Every note in `data/`, including dismissed notes, without the **Source**, **Event link**, or **CFP link** columns. |
 | **All (-dismissed)** | Every non-dismissed note in `data/`. |
 | **All (+dismissed)** | Every note in `data/`. The **Dismissed** column shows the flag. |
 | **Recently Updated (+dismissed) / Recently Updated (-dismissed)** | Data notes sorted by `updated`, newest first; with or without dismissed notes. |

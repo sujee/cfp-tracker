@@ -369,15 +369,10 @@ Current external sources do not expose a standardized event-kind property. The w
 
 1. If existing frontmatter has a nonempty `event_type`, use that value and do not re-infer it. A trimmed value is re-rendered when another change rewrites the note.
 2. Otherwise, if an incoming common row explicitly supplies a nonempty `event_type`, use it. This supports curated/programmatic callers even though current adapters do not supply one.
-3. Otherwise, call `infer_event_type(name)` using the first matching case-insensitive, word-boundary keyword rule in this order:
-   - `meetup`: `meetup`, `meetups`, `meet-up`, or `meet up` forms;
-   - `summit`: `summit` or `summits`;
-   - `workshop`: `workshop` or `workshops`;
-   - `hackathon`: `hackathon` or `hackathons`;
-   - `webinar`: `webinar` or `webinars`.
-4. If no keyword matches, default to `conference`. `other` is available for manual/source curation but is not automatically inferred.
+3. Otherwise, call `infer_event_type(name)`, which reads the ordered `EVENT_TYPE_KEYWORDS` mapping in `src/config.py`. Valid keys are `meetup`, `summit`, `workshop`, `hackathon`, and `webinar`. Each value is a nonempty list of singular phrase aliases. Matching is case-insensitive and word-bounded. Spaces and hyphens between alias words are interchangeable, and a trailing plural `s` is optional. Mapping order controls precedence. The checked-in aliases preserve the default meet-up and user-group variants.
+4. If no keyword matches, default to `conference`. `other` is available for manual/source curation but has no inference aliases. Neither `conference` nor `other` is a valid keyword-mapping key.
 
-For names containing multiple keywords, rule order determines the result. An explicit `conference` keyword needs no pattern because conference is already the fallback.
+Missing configuration falls back to built-in default aliases. A non-mapping setting, an unknown key, a non-list value, an empty list, or a blank/non-string alias raises `ValueError`. A change to aliases affects new and unset types only; existing values remain sticky.
 
 Once a value exists, it is sticky:
 
@@ -612,13 +607,16 @@ The writer validates and normalizes configured values on use. Unknown or empty v
 
 ### 10.3 Ignored terms
 
-`src/config.py` defines:
+`src/config.py` defines two independent filters:
 
 ```text
-IGNORE_TOPICS = [bitcoin, crypto, frontend, javascript, mobile]
+IGNORE_NAMES = [.NET]
+IGNORE_TOPICS = [bitcoin, crypto, frontend, javascript, mobile, dotnet]
 ```
 
-Source adapters reject configured terms as follows:
+`IGNORE_NAMES` is a central writer filter. Before note-path creation, event-type inference, or URL deduplication, `upsert` case-folds the event name and each configured literal fragment. Any substring match anywhere in the name returns `skipped`. It is not restricted to the start of the name, a word boundary, or a particular source. The row produces no note and no manifest entry, so an existing note can be archived normally. The checked-in `.NET` fragment therefore matches both `.NET Conf` and `Azure .NET Developer Days`. An invalid non-list setting, a blank value, or a non-string value raises `ValueError` before that note can change.
+
+Source adapters also reject configured `IGNORE_TOPICS` terms as follows:
 
 | Source | Ignore matching behavior |
 |---|---|
@@ -1360,4 +1358,4 @@ Country-flag rendering is not used by the active note path.
 
 ### 17.11 Event type is heuristic metadata
 
-Because current feeds provide no authoritative event-kind value, an inferred `event_type` is only a name-based classification. A fallback value of `conference` does not prove that an event is a conference, and multi-keyword names use the fixed precedence in §6.7. Sticky preservation also means a later name change does not automatically reclassify an existing note; correcting or refining the type requires editing it explicitly or clearing it so it can be inferred again.
+Because current feeds provide no authoritative event-kind value, an inferred `event_type` is only a name-based classification. A fallback value of `conference` does not prove that an event is a conference, and multi-keyword names use the configured precedence in §6.7. Sticky preservation also means a later name change does not automatically reclassify an existing note; correcting or refining the type requires editing it explicitly or clearing it so it can be inferred again.

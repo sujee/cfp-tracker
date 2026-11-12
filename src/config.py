@@ -51,6 +51,30 @@ EVENT_TYPES = [
     # "meetup",
 ]
 
+# Singular event-name aliases used to infer event_type. The mapping order controls
+# precedence. Matching ignores case, treats spaces and hyphens as interchangeable,
+# and accepts an optional plural "s". Use meetup, summit, workshop, hackathon, or
+# webinar keys. New aliases affect new notes and notes without an event_type only.
+EVENT_TYPE_KEYWORDS = {
+    "meetup": [
+        "meetup",
+        "meet-up",
+        "meet up",
+        "user group",
+        "user-group",
+        "usergroup",
+    ],
+    "summit": ["summit"],
+    "workshop": ["workshop"],
+    "hackathon": ["hackathon"],
+    "webinar": ["webinar"],
+}
+
+# Blacklist: drop any event whose name contains one of these strings, ignoring case.
+IGNORE_NAMES = [
+    ".NET",
+]
+
 # Blacklist: drop any conference whose name/topics contain these terms.
 IGNORE_TOPICS = [
     "bitcoin",
@@ -58,6 +82,7 @@ IGNORE_TOPICS = [
     "frontend",
     "javascript",
     "mobile",
+    "dotnet",
 ]
 
 # Discovered confs.tech topic files (reference only; NOT used for extraction):

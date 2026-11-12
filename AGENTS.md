@@ -193,13 +193,16 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `submissions`, the `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
   Legacy `name` is a fallback for `event_name`. A rewrite removes `name`. Renaming this key alone does not advance `updated`.
-- **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`:
-  name keywords select `meetup` (including `meet-up`/`meet up`), `summit`, `workshop`,
-  `hackathon`, or `webinar`; everything else defaults to `conference`. `other` is available
-  for curation but is not inferred. Any existing non-empty value, including a manual override,
-  is preserved and does not itself trigger a rewrite. A missing value back-fills during
-  `upsert` and `normalize_file` with return status updated when a file changes, but valid
-  `created`/`updated` stamps stay unchanged unless another source property changed.
+- **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`,
+  driven by the ordered `EVENT_TYPE_KEYWORDS` mapping in `src/config.py`. It supports singular
+  aliases for `meetup`, `summit`, `workshop`, `hackathon`, and `webinar`. Mapping order controls
+  precedence; aliases match case-insensitively at word boundaries, allow spaces or hyphens between
+  words, and accept an optional plural `s`. The default aliases cover meet-up variants and
+  `user group`/`user-group`/`usergroup`. Everything else defaults to `conference`; `other` is for
+  curation. Any existing non-empty value, including a manual override, is preserved and does not
+  itself trigger a rewrite. A missing value back-fills during `upsert` and `normalize_file` with
+  return status updated when a file changes, but valid `created`/`updated` stamps stay unchanged
+  unless another source property changed. Invalid mappings and aliases raise `ValueError`.
 - **Event types are controlled by an allow-list.** `src/config.py` sets a nonempty `EVENT_TYPES`
   (currently `conference`, `summit`, `workshop`; the missing-config fallback enables every
   controlled type except `meetup`). After the sticky/inferred type is resolved, `upsert` returns
@@ -208,6 +211,12 @@ currently change nothing the base reads. Kept for reference / if the report retu
   allowed override remains sticky. The CFP-URL index ignores excluded notes so they cannot block
   replacements. Empty lists and unknown type names raise `ValueError` before any source or archive
   subprocess instead of silently archiving broadly.
+- **`IGNORE_NAMES` filters literal event-name fragments, not only prefixes.** `cfp_writer.upsert`
+  case-folds each configured string and skips any row whose name contains it anywhere. The checked-in
+  `.NET` entry therefore rejects both `.NET Conf` and `Azure .NET Developer Days`. The check runs before
+  note-path creation, event-type inference, and URL deduplication. Skipped rows enter no manifest, so
+  existing notes archive normally. Empty or non-string settings fail without writing a note.
+  `IGNORE_TOPICS` remains a separate, adapter-level name/topic/tag filter.
 - **`topics` and `languages` are cumulative, not replaced.** `_merge_list` keeps the existing list verbatim
   as a prefix and appends only incoming values not already present (case-insensitive
   match — `English` and `english` are one value, the existing spelling wins; incoming

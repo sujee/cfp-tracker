@@ -43,6 +43,28 @@ properties:
     displayName: Event link
 views:
   - type: table
+    name: Search
+    filters:
+      and:
+        - 'formula.is_in_data'
+    order:
+      - cfp_close
+      - tier
+      - shortlist
+      - dismissed
+      - formula.cfp_title
+      - event_date
+      - location
+      - topics
+    sort:
+      - property: cfp_close
+        direction: ASC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 201
+      note.topics: 181
+  - type: table
     name: All (+dismissed)
     filters:
       and:

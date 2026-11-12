@@ -206,6 +206,10 @@ class TestEventType(WriterTestCase):
             "vLLM Toronto Meetup": "meetup",
             "CNCF Montreal: 2026 Meetups": "meetup",
             "Kubernetes Meet-up Berlin": "meetup",
+            "Orlando .NET User Group": "meetup",
+            "PowerShell UserGroup Innsalzach": "meetup",
+            "Baton Rouge User Groups": "meetup",
+            "Azure User-Group Norway": "meetup",
             "Ubuntu Summit": "summit",
             "OpenEmbedded Workshop 2027": "workshop",
             "FABCON 2027 - WORKSHOPS": "workshop",
@@ -227,6 +231,37 @@ class TestEventType(WriterTestCase):
                 "other",
             ),
         )
+
+    def test_custom_event_type_keywords_are_configurable(self) -> None:
+        keywords = {"meetup": ["code camp", "user group"]}
+        cases = {
+            "Cloud Code Camps": "meetup",
+            "Cloud code-camp": "meetup",
+            "Cloud codecamp": "meetup",
+            "Azure UserGroups 2027": "meetup",
+            "Global Summit": "conference",
+        }
+        with mock.patch.object(config, "EVENT_TYPE_KEYWORDS", keywords):
+            for name, expected in cases.items():
+                with self.subTest(name=name):
+                    self.assertEqual(cw.infer_event_type(name), expected)
+
+    def test_invalid_event_type_keyword_config_fails_closed(self) -> None:
+        cases = (
+            "not-a-mapping",
+            {"summit": []},
+            {"summit": "summit"},
+            {"summit": [""]},
+            {"summit": ["---"]},
+            {"summit": [None]},
+            {"conference": ["conference"]},
+            {"unknown": ["example"]},
+        )
+        for configured in cases:
+            with self.subTest(configured=configured):
+                with mock.patch.object(config, "EVENT_TYPE_KEYWORDS", configured):
+                    with self.assertRaisesRegex(ValueError, "EVENT_TYPE_KEYWORDS"):
+                        cw.infer_event_type("Example Summit")
 
     def test_new_note_defaults_to_conference(self) -> None:
         self.write_initial()
@@ -302,6 +337,14 @@ class TestMeetupExclusion(WriterTestCase):
         self.assertEqual(produced, [])
         self.assertFalse(self.path.exists())
 
+    def test_user_group_name_is_skipped_when_meetups_are_excluded(self) -> None:
+        row = sample_row(
+            name="PowerShell UserGroup Innsalzach",
+        )
+
+        self.assertEqual(cw.upsert(self.data, row), "skipped")
+        self.assertFalse(cw.note_path(self.data, row).exists())
+
     def test_config_can_allow_meetups(self) -> None:
         with mock.patch.object(config, "EVENT_TYPES", list(cw.EVENT_TYPES)):
             self.assertEqual(cw.upsert(self.data, self.row), "new")
@@ -361,6 +404,47 @@ class TestMeetupExclusion(WriterTestCase):
         self.assertEqual(cw.upsert(self.data, replacement), "new")
         replacement_path = cw.note_path(self.data, replacement)
         self.assertTrue(replacement_path.is_file())
+
+
+class TestIgnoredNames(WriterTestCase):
+    """Configured literal fragments skip matching names from every source."""
+
+    def test_ignore_names_match_anywhere_and_ignore_case(self) -> None:
+        names = (
+            ".NET Conf 2027",
+            "Azure .NET Developer Days",
+            "ASP.net Core Conference",
+        )
+        with mock.patch.object(config, "IGNORE_NAMES", [".NET"]):
+            for name in names:
+                with self.subTest(name=name):
+                    row = sample_row(name=name)
+                    self.assertTrue(cw.event_name_is_ignored(name))
+                    self.assertEqual(cw.upsert(self.data, row), "skipped")
+                    self.assertFalse(cw.note_path(self.data, row).exists())
+
+            self.assertFalse(cw.event_name_is_ignored("Power Platform Days"))
+            self.assertEqual(cw.upsert(self.data, self.row), "new")
+            self.assertTrue(self.path.is_file())
+
+    def test_ignored_name_is_not_recorded_as_produced(self) -> None:
+        counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+        produced = []
+        row = sample_row(name="Azure .NET Developer Days")
+        with mock.patch.object(config, "IGNORE_NAMES", [".NET"]):
+            status = cw.upsert_counted(self.data, row, counts, produced)
+
+        self.assertEqual(status, "skipped")
+        self.assertEqual(counts["skipped"], 1)
+        self.assertEqual(produced, [])
+
+    def test_invalid_ignore_names_fail_before_writes(self) -> None:
+        for configured in (".NET", [""], [None]):
+            with self.subTest(configured=configured):
+                with mock.patch.object(config, "IGNORE_NAMES", configured):
+                    with self.assertRaisesRegex(ValueError, "IGNORE_NAMES"):
+                        cw.upsert(self.data, self.row)
+                self.assertFalse(self.path.exists())
 
 
 class TestTopicsPreserved(WriterTestCase):

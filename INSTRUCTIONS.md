@@ -109,13 +109,20 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   lowercase.
 - `event_type` is inferred for new/missing values as `conference`, `meetup`, `summit`, `workshop`,
   `hackathon`, or `webinar` (default `conference`; `other` is available for manual curation).
-  Existing non-empty values are sticky, including manual overrides. A missing value back-fills
-  during refresh or `normalize-data.py` without advancing a valid `updated` stamp.
+  `EVENT_TYPE_KEYWORDS` in `src/config.py` controls the ordered singular aliases. Matching ignores
+  case, accepts spaces or hyphens between words, and permits a plural `s`. Existing non-empty values
+  are sticky, including manual overrides. Alias changes therefore do not reclassify existing notes.
+  A missing value back-fills during refresh or `normalize-data.py` without advancing a valid
+  `updated` stamp. Invalid mappings or aliases raise `ValueError`.
 - `EVENT_TYPES` in `src/config.py` is the nonempty allow-list applied after type resolution.
   The checked-in list currently enables `conference`, `summit`, and `workshop`; the writer's
   missing-config fallback excludes only `meetup`. Excluded rows are skipped and existing notes
   archived; an allowed explicit override survives. Unknown values or an empty list raise
   `ValueError` before source or archive steps run.
+- `IGNORE_NAMES` in `src/config.py` drops any event whose name contains a configured string. Matching
+  ignores case and applies anywhere in the name, not only at the start. The writer enforces this for
+  every source before creating or rewriting a note. Skipped rows enter no manifest and archive normally.
+  Invalid settings raise `ValueError`. `IGNORE_TOPICS` separately filters adapter-level name/topic terms.
 - `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
   first-seen date and is preserved. `updated` advances to the run date whenever a source change
   rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp
