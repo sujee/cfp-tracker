@@ -14,6 +14,10 @@ Usage::
 
     python3 src/archive-orphans.py --data data --archive archived \\
         --manifest /tmp/m-dev.json --manifest /tmp/m-confs.json --manifest /tmp/m-manual.json
+
+A source can be deliberately skipped for a run (``config.INPUT_SOURCES``). Its notes
+were never asked to be produced, so they are not orphans: ``--skip-source NAME``
+(repeatable) leaves every note whose ``source`` frontmatter matches untouched.
 """
 from __future__ import annotations
 
@@ -33,15 +37,18 @@ def load_manifests(paths) -> set[str]:
     return produced
 
 
-def find_orphans(data_dir: Path, produced: set[str]) -> list[str]:
+def find_orphans(data_dir: Path, produced: set[str], skip_sources=()) -> list[str]:
     """Relative paths of ``type: cfp`` notes under *data_dir* that no source produced.
 
     Non-CFP notes (anything without ``type: cfp``) are left alone — the pipeline
-    only owns its own generated notes.
+    only owns its own generated notes. A note whose ``source`` is one of
+    *skip_sources* is also left alone: that source was deliberately not run, so
+    its notes are un-produced by choice, not dropped by upstream.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cfp_writer import _read_frontmatter, _as_str, FrontmatterError
 
+    skipped = {s for s in (skip_sources or ()) if s}
     orphans = []
     for p in sorted(data_dir.rglob("*.md")):
         rel = p.relative_to(data_dir).as_posix()
@@ -53,19 +60,25 @@ def find_orphans(data_dir: Path, produced: set[str]) -> list[str]:
             continue  # not ours to move
         if _as_str(fm.get("type")) != "cfp":
             continue
+        if _as_str(fm.get("source")) in skipped:
+            continue
         orphans.append(rel)
     return orphans
 
 
 def archive_orphans(
-    data_dir: Path, archive_dir: Path, produced: set[str], dry_run: bool = False
+    data_dir: Path,
+    archive_dir: Path,
+    produced: set[str],
+    dry_run: bool = False,
+    skip_sources=(),
 ) -> list[str]:
     """Move orphan notes into *archive_dir* (plain move, no edits).
 
     Returns the list of relative paths that were (or would be) moved.
     """
     moved = []
-    for rel in find_orphans(data_dir, produced):
+    for rel in find_orphans(data_dir, produced, skip_sources):
         src = data_dir / rel
         dst = archive_dir / rel
         moved.append(rel)
@@ -81,6 +94,10 @@ def main() -> int:
     ap.add_argument("--data", default="data", help="Live notes directory (default: data).")
     ap.add_argument("--archive", default="archived", help="Where orphans are moved (default: archived).")
     ap.add_argument("--manifest", action="append", default=[], help="A per-source manifest JSON (repeatable).")
+    ap.add_argument(
+        "--skip-source", action="append", default=[],
+        help="Notes owned by this source are never orphans (repeatable; a deliberately skipped source).",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Report orphans without moving anything.")
     ap.add_argument("--json", action="store_true", help="Emit the moved paths as JSON.")
     args = ap.parse_args()
@@ -88,7 +105,9 @@ def main() -> int:
     data_dir = Path(args.data).resolve()
     archive_dir = Path(args.archive).resolve()
     produced = load_manifests(args.manifest)
-    moved = archive_orphans(data_dir, archive_dir, produced, dry_run=args.dry_run)
+    moved = archive_orphans(
+        data_dir, archive_dir, produced, dry_run=args.dry_run, skip_sources=args.skip_source
+    )
 
     if args.json:
         print(json.dumps(moved, indent=2))

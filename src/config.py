@@ -9,6 +9,31 @@ CONFS_TECH_TOPICS = {
     "ai"
 }
 
+# Which sources the refresh fetches, in run order (mirrors SOURCE_PRIORITY in
+# cfp_writer.py). Comment out a source to skip it for a run. Notes owned by a
+# skipped source are left in data/ untouched — they are NOT archived — so you can
+# re-enable the source later without losing anything. Keep nonempty; unknown or
+# empty values fail the run (same contract as EVENT_TYPES).
+INPUT_SOURCES = [
+    "developers.events",
+    "cfp.ninja",
+    "confs.tech",
+    "adato-tracker",
+    "open-tech-cfps",
+    "manual",
+]
+
+# Explicit manual input files, relative to input/. No other single markdown file
+# is read automatically — a checklist, scratch table, or new import file is not a
+# CFP source until it is listed here (and the manual source is enabled above).
+# An empty list makes manual input a no-op; a missing or absolute path fails the
+# row.
+MANUAL_INPUT_FILES = [
+    "gmail1.md",
+    #"conferences-to-check.md"
+]
+
+
 # Allow-list of event_type values to keep in data/. Other types are skipped and
 # existing notes are archived. Valid values: conference, meetup, summit,
 # workshop, hackathon, webinar, other. Keep nonempty; invalid values fail a run.

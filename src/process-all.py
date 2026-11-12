@@ -45,6 +45,50 @@ def included_event_types() -> set[str]:
     return {event_type for event_type in EVENT_TYPES if _event_type_included(event_type)}
 
 
+# Canonical source name -> (script, manifest stem). Order mirrors
+# ``cfp_writer.SOURCE_PRIORITY`` so a run always processes sources in the same
+# order regardless of how config.INPUT_SOURCES is written.
+SOURCE_STEPS = {
+    "developers.events": ("process-developer-events.py", "dev"),
+    "cfp.ninja": ("process-cfp-ninja.py", "ninja"),
+    "confs.tech": ("process-confs-tech.py", "confs"),
+    "adato-tracker": ("process-adato-tracker.py", "adato"),
+    "open-tech-cfps": ("process-open-tech-cfps.py", "opentech"),
+    "manual": ("process-manual-input.py", "manual"),
+}
+
+
+def selected_sources() -> list[str]:
+    """Resolve and validate the configured source allow-list.
+
+    Unknown names, non-string entries, and an empty list raise ``ValueError``
+    before anything runs (same fail-loudly contract as ``EVENT_TYPES``).
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import config as _cfg
+
+    configured = getattr(_cfg, "INPUT_SOURCES", None)
+    if configured is None:
+        return list(SOURCE_STEPS)
+    if isinstance(configured, str) or not hasattr(configured, "__iter__"):
+        raise ValueError("config.INPUT_SOURCES must be a list of source names")
+    names: list[str] = []
+    for item in configured:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("config.INPUT_SOURCES must contain nonempty source names")
+        name = item.strip()
+        if name not in SOURCE_STEPS:
+            raise ValueError(
+                f"Unknown config.INPUT_SOURCES value: {name!r}; "
+                f"choose from {', '.join(SOURCE_STEPS)}"
+            )
+        if name not in names:
+            names.append(name)
+    if not names:
+        raise ValueError("config.INPUT_SOURCES must not be empty")
+    return names
+
+
 def collect_event_type_counts(data_dir: Path) -> dict[str, Counter]:
     """Count live CFP notes by stored source and resolved event type."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -207,6 +251,8 @@ def main() -> int:
     )
     args, rest = ap.parse_known_args()
     included = included_event_types()  # Fail invalid config before notes or archives change.
+    selected = selected_sources()      # Same fail-first contract for INPUT_SOURCES.
+    skipped_sources = [name for name in SOURCE_STEPS if name not in selected]
 
     here = Path(__file__).resolve().parent
     data_dir = Path(args.out).resolve()
@@ -217,22 +263,26 @@ def main() -> int:
     archived = 0
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        dev_m, confs_m, ninja_m, manual_m, adato_m, opentech_m = (
-            tmp / f"{n}.json" for n in ("dev", "confs", "ninja", "manual", "adato", "opentech")
-        )
+        manifests: dict[str, Path] = {stem: tmp / f"{stem}.json" for _, stem in SOURCE_STEPS.values()}
 
-        steps = [
-            [sys.executable, str(here / "process-developer-events.py"), "--out", str(data_dir), "--manifest", str(dev_m), *rest],
-            [sys.executable, str(here / "process-cfp-ninja.py"), "--out", str(data_dir), "--manifest", str(ninja_m)],
-            [sys.executable, str(here / "process-confs-tech.py"), "--out", str(data_dir), "--manifest", str(confs_m)],
-            [sys.executable, str(here / "process-adato-tracker.py"), "--out", str(data_dir), "--manifest", str(adato_m)],
-            [sys.executable, str(here / "process-open-tech-cfps.py"), "--out", str(data_dir), "--manifest", str(opentech_m)],
-        ]
-        if input_dir.is_dir():
-            steps.append(
-                [sys.executable, str(here / "process-manual-input.py"), "--out", str(data_dir),
-                 "--input", str(input_dir), "--manifest", str(manual_m)]
-            )
+        steps = []
+        for name in selected:
+            script, stem = SOURCE_STEPS[name]
+            manifest = manifests[stem]
+            cmd = [
+                sys.executable, str(here / script),
+                "--out", str(data_dir), "--manifest", str(manifest),
+            ]
+            if name == "developers.events":
+                cmd += [*rest]
+            if name == "manual":
+                if not input_dir.is_dir():
+                    # A missing input dir is a normal state, not an error; nothing
+                    # will claim the manual manifest, so drop it from archiving.
+                    print(f"skipping {name}: input dir not found: {input_dir}")
+                    continue
+                cmd += ["--input", str(input_dir)]
+            steps.append(cmd)
 
         for cmd in steps:
             print(">", " ".join(cmd))
@@ -249,8 +299,12 @@ def main() -> int:
         if not args.no_archive and data_dir.is_dir():
             cmd = [sys.executable, str(here / "archive-orphans.py"), "--data", str(data_dir),
                    "--archive", str(archive_dir)]
-            for m in (dev_m, confs_m, ninja_m, manual_m, adato_m, opentech_m):
-                cmd += ["--manifest", str(m)]
+            for name in selected:
+                cmd += ["--manifest", str(manifests[SOURCE_STEPS[name][1]])]
+            # Notes owned by a skipped source are NOT orphans: the source was not
+            # asked to produce them this run, so they must stay in data/.
+            for name in skipped_sources:
+                cmd += ["--skip-source", name]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.stdout:
                 print(proc.stdout, end="")

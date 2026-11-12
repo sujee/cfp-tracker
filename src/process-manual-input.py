@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Merge manually curated conference info from input/*.md into per-CFP files."""
+"""Merge manually curated conference tables into per-CFP notes.
+
+Only the files named in ``config.MANUAL_INPUT_FILES`` are read, resolved inside
+``--input``. Scraps, checklists, and newly dropped files under ``input/`` are not
+CFP sources until they are explicitly listed. To opt in to another file, add its
+basename there; to remove one, comment its entry out.
+"""
 from __future__ import annotations
 
 import argparse
@@ -96,6 +102,46 @@ def parse_rows(text: str) -> list[dict]:
     return rows
 
 
+def manual_input_files(input_dir: Path) -> list[Path]:
+    """Resolve the explicit manual input file list inside *input_dir*.
+
+    ``MANUAL_INPUT_FILES`` in config is a list of relative paths — typically one
+    basename, e.g. ``gmail1.md`` — never a directory sweep. An absent setting
+    falls back to legacy ``*.md`` globbing (callers outside this repo still work);
+    an empty list returns no files so manual input can be disabled while
+    remaining enabled in ``INPUT_SOURCES``. Each named path must be a relative
+    file inside the directory, and must exist: a typo would otherwise make its
+    conferences vanish silently from the next refresh.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import config as _cfg
+
+    configured = getattr(_cfg, "MANUAL_INPUT_FILES", None)
+    if configured is None:
+        return sorted(input_dir.glob("*.md"))
+    if isinstance(configured, str) or not hasattr(configured, "__iter__"):
+        raise ValueError("config.MANUAL_INPUT_FILES must be a list of relative file paths")
+
+    files: list[Path] = []
+    for item in configured:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError("config.MANUAL_INPUT_FILES must contain nonempty file paths")
+        name = item.strip()
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(
+                f"config.MANUAL_INPUT_FILES entry must stay inside {input_dir}: {name!r}"
+            )
+        path = input_dir / relative
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"configured manual input file not found: {path} "
+                "(fix MANUAL_INPUT_FILES in src/config.py or restore the file)"
+            )
+        files.append(path)
+    return files
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data")
@@ -114,8 +160,14 @@ def main() -> int:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cfp_writer import upsert_counted, parse_start_date, summary_line, write_manifest
 
+    try:
+        files = manual_input_files(input_dir)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"manual input: {exc}", file=sys.stderr)
+        return 1
+
     rows = []
-    for md in sorted(input_dir.glob("*.md")):
+    for md in files:
         rows.extend(parse_rows(md.read_text(encoding="utf-8")))
 
     counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}

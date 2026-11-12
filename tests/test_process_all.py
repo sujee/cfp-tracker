@@ -228,6 +228,87 @@ class TestPipelineWiring(unittest.TestCase):
             any(any(part.endswith("apply-prestige.py") for part in c) for c in commands)
         )
 
+    def test_only_selected_sources_run_and_skipped_ones_are_not_orphans(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            argv = [
+                "process-all.py",
+                "--out", str(data_dir),
+                "--input", str(Path(tmp)),  # a real dir so the manual step runs
+                "--prestige", str(ROOT / "prestige.md"),
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(config, "INPUT_SOURCES", ["developers.events", "manual"]),
+                mock.patch.object(pa.subprocess, "run", return_value=completed) as run,
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(pa.main(), 0)
+
+        commands = [call.args[0] for call in run.call_args_list]
+        scripts = [
+            Path(part).name for cmd in commands for part in cmd
+            if part.endswith(".py") and Path(part).name.startswith("process-")
+        ]
+        self.assertEqual(
+            scripts, ["process-developer-events.py", "process-manual-input.py"],
+            f"unexpected scripts: {scripts}",
+        )
+        archive = next(
+            command for command in commands
+            if any(part.endswith("archive-orphans.py") for part in command)
+        )
+        self.assertIn("--skip-source", archive)
+        for name in ("cfp.ninja", "confs.tech", "adato-tracker", "open-tech-cfps"):
+            self.assertIn(name, archive)
+
+    def test_unknown_input_source_fails_before_anything_runs(self) -> None:
+        argv = ["process-all.py", "--out", "unused", "--input", "also-unused"]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(config, "INPUT_SOURCES", ["developers.events", "not-a-source"]),
+            mock.patch.object(pa.subprocess, "run") as run,
+        ):
+            with self.assertRaisesRegex(ValueError, "not-a-source"):
+                pa.main()
+        run.assert_not_called()
+
+    def test_empty_input_sources_fail_before_anything_runs(self) -> None:
+        argv = ["process-all.py", "--out", "unused", "--input", "also-unused"]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(config, "INPUT_SOURCES", []),
+            mock.patch.object(pa.subprocess, "run") as run,
+        ):
+            with self.assertRaisesRegex(ValueError, "INPUT_SOURCES"):
+                pa.main()
+        run.assert_not_called()
+
+    def test_missing_manual_input_dir_is_skipped_without_failing(self) -> None:
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            data_dir.mkdir()
+            argv = [
+                "process-all.py",
+                "--out", str(data_dir),
+                "--input", str(Path(tmp) / "missing-input"),
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(config, "INPUT_SOURCES", ["manual"]),
+                mock.patch.object(pa.subprocess, "run", return_value=completed) as run,
+                redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(pa.main(), 0)
+
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertFalse(
+            any(any(part.endswith("process-manual-input.py") for part in c) for c in commands)
+        )
+
     def test_invalid_event_types_fail_before_sources_or_archiving(self) -> None:
         argv = ["process-all.py", "--out", "unused", "--input", "also-unused"]
         with (

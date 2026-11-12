@@ -11,11 +11,13 @@ Offline. ``tests/fixtures/manual/input.sample.md`` is a copy of the real
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "manual"
@@ -31,6 +33,7 @@ def load_module(path: Path, name: str):
 
 
 pmi = load_module(ROOT / "src" / "process-manual-input.py", "pmi")
+import config  # noqa: E402  shared by src manuals and tests config patches
 
 SAMPLE = (FIX / "input.sample.md").read_text(encoding="utf-8")
 
@@ -97,10 +100,52 @@ class TestParseRows(unittest.TestCase):
         self.assertIn("AI in Production", ai_engineer["topics"])
 
 
+class TestManualInputFiles(unittest.TestCase):
+    def test_only_listed_files_are_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for name in ("kept.md", "ignored.md"):
+                (directory / name).write_text(SAMPLE, encoding="utf-8")
+            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["kept.md"]):
+                files = pmi.manual_input_files(directory)
+            self.assertEqual([p.name for p in files], ["kept.md"])
+
+    def test_missing_configured_file_fails_loudly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["typo.md"]):
+                with self.assertRaisesRegex(FileNotFoundError, "typo.md"):
+                    pmi.manual_input_files(Path(tmp))
+
+    def test_absolute_and_parent_paths_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            for value in ("/etc/passwd", "../gmail1.md"):
+                with self.subTest(value=value):
+                    with mock.patch.object(config, "MANUAL_INPUT_FILES", [value]):
+                        with self.assertRaisesRegex(ValueError, "inside"):
+                            pmi.manual_input_files(Path(tmp))
+
+    def test_empty_list_disables_manual_input(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(config, "MANUAL_INPUT_FILES", []):
+                self.assertEqual(pmi.manual_input_files(Path(tmp)), [])
+
+    def test_cli_reports_config_error_instead_of_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["typo.md"]):
+                with mock.patch.object(sys, "argv", ["x", "--input", tmp, "--out", str(Path(tmp) / "data")]):
+                    self.assertEqual(pmi.main(), 1)
+
+
 class TestMainEndToEnd(unittest.TestCase):
-    def test_runs_offline_and_writes_notes(self) -> None:
+    def test_runs_offline_and_writes_only_the_configured_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "data"
+            input_dir = Path(tmp) / "input"
+            input_dir.mkdir()
+            # Config names gmail1.md by default; an identically-shaped table next
+            # to it is not a source just because it lands in the directory.
+            shutil.copy(FIX / "input.sample.md", input_dir / "gmail1.md")
+            shutil.copy(FIX / "input.sample.md", input_dir / "scratch.md")
             proc = subprocess.run(
                 [
                     sys.executable,
@@ -108,7 +153,7 @@ class TestMainEndToEnd(unittest.TestCase):
                     "--out",
                     str(out),
                     "--input",
-                    str(FIX),
+                    str(input_dir),
                 ],
                 capture_output=True,
                 text=True,

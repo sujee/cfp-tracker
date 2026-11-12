@@ -13,7 +13,7 @@ first (`ln -s` commands in README › Quick start).
 This folder is a git repo with `origin` → `git@github.com:sujee/cfp-tracker.git`.
 
 Keeps a set of **one note per conference** under `data/`, refreshed from public CFP feeds
-(developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated `input/*.md`). The notes are the
+(developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated files named in `MANUAL_INPUT_FILES`). The notes are the
 data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`).
 
 ## When to use
@@ -95,7 +95,7 @@ Everything an agent needs is here, deliberately:
 - `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
-- `src/process-manual-input.py` — merges hand-curated `input/*.md`.
+- `src/process-manual-input.py` — merges hand-curated `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`).
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
@@ -263,7 +263,9 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `0-dashboard/cfps-dashboard.md`). The dashboard's Dataview `FROM "cfps/data"` is a literal
   vault-relative folder and does **not** suffix-match, so keep it in step with the vault's own
   copy.
-- **Manual `input/*.md` rows are markdown tables.** The first column may be a link
+- **Manual input reads only explicitly listed files — no `input/*.md` sweep.**
+  `MANUAL_INPUT_FILES` in `src/config.py` lists relative file paths (usually basenames) inside `input/`; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
+- **Manual input rows are markdown tables.** The first column may be a link
   (`**[Name](url)**`): the parser takes the link *text* as `name`, the link as `event_url`
   (unwrapping Google `.../url?...&q=<real>` redirects), and strips emphasis. Without this the
   markdown — including a Google redirect URL — leaks into the name and slug. The CFP-Close
@@ -359,7 +361,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
   Google I/O, Cloud Next, Microsoft Build, WWDC, GitHub Universe, PyCon US, NeurIPS, ICML, ICLR,
   USENIX ATC, OSDI, GOTO, SIGMOD, VLDB, CVPR) sit in the same table on purpose: `--check` listing
   them as "matches nothing" *is* the coverage-gap report, and they start matching the day one
-  appears in `input/*.md`. Never "clean up" a zero-match row without checking whether it is a
+  appears in a file listed in `MANUAL_INPUT_FILES`. Never "clean up" a zero-match row without checking whether it is a
   gap row or a typo.
 - **A zero-match row is not a failure, but a malformed row is.** `int(ranking)` and an empty
   `keywords` cell raise `ValueError` with the line number, so a typo fails the run instead of
@@ -375,9 +377,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
   skip its fetch. Its notes stay in `data/` — `archive-orphans.py --skip-source NAME` exempts
   them — so a source can be paused without mass-archiving its notes. Unknown or empty values
   raise `ValueError` before any source runs (same contract as `EVENT_TYPES`).
-- **`prestige.md` must not live in `input/`.** `src/process-manual-input.py` reads every
-  `input/*.md` table row with five or more columns as a CFP; the ranking table would become
-  conferences. It lives at the repo root, and `apply-prestige.py` finds it there.
+- **`prestige.md` stays at the repo root** (and `apply-prestige.py` finds it there). The manual source reads only `MANUAL_INPUT_FILES`, so do not add the prestige list there either — it is a ranking table, not a CFP row.
 
 ## Verification
 

@@ -59,6 +59,34 @@ class TestFindOrphans(ArchiveTestCase):
         self.note("2027/b.md")
         self.assertEqual(arch.find_orphans(self.data, set()), ["2026/a.md", "2027/b.md"])
 
+    def test_skip_source_leaves_a_deliberately_skipped_source_alone(self) -> None:
+        # A source disabled in config.INPUT_SOURCES was never asked to produce its
+        # notes this run; those notes are un-produced by choice, not dropped
+        # upstream, so they must stay in data/.
+        self.note("2026/a.md", "---\ntype: cfp\nsource: open-tech-cfps\n---\n\n## Notes\n")
+        self.note("2026/b.md", "---\ntype: cfp\nsource: developers.events\n---\n\n## Notes\n")
+        orphans = arch.find_orphans(self.data, set(), skip_sources=["open-tech-cfps"])
+        self.assertEqual(orphans, ["2026/b.md"])
+
+    def test_skip_source_default_changes_nothing(self) -> None:
+        self.note("2026/a.md")
+        self.assertEqual(arch.find_orphans(self.data, set()), ["2026/a.md"])
+        self.assertEqual(arch.find_orphans(self.data, set(), skip_sources=[]), ["2026/a.md"])
+
+    def test_skip_source_ignores_empty_and_unknown_values(self) -> None:
+        self.note("2026/a.md", "---\ntype: cfp\nsource: manual\n---\n\n## Notes\n")
+        self.assertEqual(arch.find_orphans(self.data, set(), skip_sources=["", None]), ["2026/a.md"])
+        self.assertEqual(arch.find_orphans(self.data, set(), skip_sources=["manual"]), [])
+
+    def test_archive_orphans_moves_only_unskipped_notes(self) -> None:
+        self.note("2026/a.md", "---\ntype: cfp\nsource: open-tech-cfps\n---\n\n## Notes\n")
+        self.note("2026/b.md", "---\ntype: cfp\nsource: manual\n---\n\n## Notes\n")
+        moved = arch.archive_orphans(self.data, self.archive, set(), skip_sources=["open-tech-cfps"])
+        self.assertEqual(moved, ["2026/b.md"])
+        self.assertTrue((self.data / "2026/a.md").is_file())
+        self.assertFalse((self.data / "2026/b.md").is_file())
+        self.assertTrue((self.archive / "2026/b.md").is_file())
+
     def test_non_cfp_note_is_left_alone(self) -> None:
         self.note("2026/a.md")
         self.note("2026/readme.md", "# just a note\n\nno frontmatter\n")

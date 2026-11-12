@@ -21,7 +21,8 @@ uv run python src/process-all.py      # every source → data/   (uses the proje
 `src/process-all.py` runs all **enabled** sources (`INPUT_SOURCES` in `src/config.py`,
 comment out a source to skip it; its notes stay in `data/` — they are *not* archived — and
 unknown/empty values fail the run): developers.events, cfp.ninja, confs.tech,
-adato-tracker, Open Tech CFPs, and any hand-curated rows in `input/*.md`.
+adato-tracker, Open Tech CFPs, and any hand-curated rows in the files explicitly
+named in `MANUAL_INPUT_FILES` (`src/config.py`).
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -137,8 +138,8 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
   the registry wins. A hand-set `tier` on a note that matches **no** row is kept, so a one-off
   can be ranked directly. `tier` is never compared against source data, so stamping it does not
   advance `updated`.
-- Do not put `prestige.md` in `input/`: `src/process-manual-input.py` reads every `input/*.md`
-  table row with five or more columns as a CFP, so the ranking table would become conferences.
+- Manual input reads only the explicit `MANUAL_INPUT_FILES` list (`src/config.py`), not every
+  file in `input/`. Other Markdown checklists are ignored until added to that list.
 - Do not commit or push anything to git unless asked. Always ask permission first — never
   commit or push automatically.
 
@@ -157,7 +158,7 @@ Merged into `data/`:
 - **Open Tech CFPs** — public `open.json` + `closed.json`, CC BY 4.0, Sessionize-derived.
   Filter `cfp_close_utc`, not `status`; map only explicit travel/accommodation coverage to benefits.
   It ranks lowest and fills gaps.
-- **`input/*.md`** — manually curated rows, merged by `src/process-manual-input.py`.
+- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config.py`).
 
 When two sources carry the same conference (same slug), the higher-priority one owns the note:
 `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`. A lower-priority source skips a note
