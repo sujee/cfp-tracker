@@ -2,7 +2,7 @@ filters:
   and:
     - type == "cfp"
 formulas:
-  cfp_title: link(file.path, if(name, name, file.name))
+  cfp_title: link(file.path, if(event_name, event_name, file.name))
   # Folder constants — the match is a suffix, so these work whether your vault
   # stores the notes at `cfps/data` or at `30-speaking-talks/cfps/data`.
   # Change them only if the folders themselves are named differently.

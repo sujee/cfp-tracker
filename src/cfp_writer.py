@@ -59,7 +59,7 @@ def infer_event_type(name: str) -> str:
 # all of them already match, so a user's edits to the body, ``shortlist`` /
 # ``submissions``, or any extra frontmatter survive an unchanged refresh.
 SOURCE_SCALAR_FIELDS = (
-    "name",
+    "event_name",
     "event_date",
     "location",
     "country",
@@ -204,7 +204,7 @@ def _cfp_url_index(data_dir: Path) -> dict[str, list[tuple[Path, str, str]]]:
         if not key:
             continue
         index.setdefault(key, []).append(
-            (p, _as_str(fm.get("source")), _as_str(fm.get("name")))
+            (p, _as_str(fm.get("source")), _event_name(fm))
         )
     _CFP_URL_INDEX[data_dir] = index
     return index
@@ -214,7 +214,7 @@ def _cfp_url_index(data_dir: Path) -> dict[str, list[tuple[Path, str, str]]]:
 # user metadata and is preserved verbatim on a rewrite (see ``_extra_frontmatter_lines``).
 KNOWN_FM_KEYS = {
     "type",
-    "name",
+    "event_name",
     "event_date",
     "event_type",
     "location",
@@ -236,9 +236,9 @@ KNOWN_FM_KEYS = {
     # validity (a missing/garbled stamp back-fills on the next refresh).
     "created",
     "updated",
-    # Legacy keys kept "known" (so they are consumed, not preserved as user
-    # metadata) — a migrated note must not keep a stale ``submission`` or
-    # ``conf_date`` line next to the new key.
+    # Legacy keys are consumed instead of preserved as user metadata. A migrated
+    # note must not keep a stale key next to its replacement.
+    "name",
     "submission",
     "conf_date",
 }
@@ -350,6 +350,11 @@ def _as_str(value) -> str:
     if isinstance(value, (datetime.date, datetime.datetime)):
         return value.isoformat()
     return str(value)
+
+
+def _event_name(fm: dict) -> str:
+    """Read the canonical event name, falling back to the legacy ``name`` key."""
+    return _as_str(fm.get("event_name")) or _as_str(fm.get("name"))
 
 
 def _as_list(value) -> list:
@@ -537,7 +542,7 @@ def _render(
     fm = [
         "---",
         "type: cfp",
-        f"name: {_yaml_str(row.get('name', ''))}",
+        f"event_name: {_yaml_str(row.get('name', ''))}",
         f"event_date: {_yaml_str(row.get('event_date', ''))}",
         f"event_type: {_yaml_str(row.get('event_type', ''))}",
         f"location: {_yaml_str(row.get('location', ''))}",
@@ -642,8 +647,9 @@ def _source_props_match(fm: dict, row: dict) -> bool:
     if not fm:
         return False
     for key in SOURCE_SCALAR_FIELDS:
-        existing = _as_str(fm.get(key))
-        incoming = "" if row.get(key) is None else str(row.get(key, ""))
+        source_key = "name" if key == "event_name" else key
+        existing = _event_name(fm) if key == "event_name" else _as_str(fm.get(key))
+        incoming = "" if row.get(source_key) is None else str(row.get(source_key, ""))
         if existing != incoming:
             return False
     for key in LIST_FIELDS:
@@ -763,6 +769,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     props_match = _source_props_match(fm, row)
     if (
         props_match
+        and "name" not in fm
         and event_type_set
         and _valid_iso_date(fm.get("created"))
         and _valid_iso_date(fm.get("updated"))
@@ -842,7 +849,8 @@ def normalize_file(path: Path, today=None) -> bool:
     if not fm:
         return False
     text = path.read_text(encoding="utf-8")
-    row = {k: _as_str(fm.get(k)) for k in SOURCE_SCALAR_FIELDS}
+    row = {k: _as_str(fm.get(k)) for k in SOURCE_SCALAR_FIELDS if k != "event_name"}
+    row["name"] = _event_name(fm)
     if not row["event_date"] and "conf_date" in fm:  # legacy key rename
         row["event_date"] = _as_str(fm.get("conf_date"))
     row["topics"] = _as_list(fm.get("topics"))

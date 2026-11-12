@@ -87,7 +87,7 @@ there. (The exclusion is per-view: the base's top-level filter ANDs with every v
 
 ## Rules
 
-- Notes are generated. Do not hand-edit the source-owned fields (`name`, `event_date`,
+- Notes are generated. Do not hand-edit the source-owned fields (`event_name`, `event_date`,
   `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
   `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `submissions`,
   the `## Notes` body, and any extra frontmatter property you add. `topics` is cumulative:

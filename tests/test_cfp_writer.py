@@ -124,6 +124,56 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertIn("type: cfp", text)
 
 
+class TestEventNameMigration(WriterTestCase):
+    """The stored event name uses ``event_name`` instead of legacy ``name``."""
+
+    def test_new_note_uses_event_name_without_legacy_name(self) -> None:
+        self.write_initial()
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_name"], self.row["name"])
+        self.assertNotIn("name", fm)
+        self.assertIn(
+            "\nevent_name: Power Platform Days Barcelona 2026\n",
+            self.path.read_text(encoding="utf-8"),
+        )
+
+    def test_normalize_migrates_legacy_name_without_advancing_stamps(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit(
+            "event_name: Power Platform Days Barcelona 2026",
+            "name: Power Platform Days Barcelona 2026",
+        )
+
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-09"))
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_name"], self.row["name"])
+        self.assertNotIn("name", fm)
+        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        after = self.path.read_bytes()
+        cw.normalize_file(self.path, today="2026-11-10")
+        self.assertEqual(self.path.read_bytes(), after)
+
+    def test_refresh_migrates_legacy_name_without_advancing_updated(self) -> None:
+        cw.upsert(self.data, self.row, today="2026-11-06")
+        self.edit(
+            "event_name: Power Platform Days Barcelona 2026",
+            "name: Power Platform Days Barcelona 2026",
+        )
+
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_name"], self.row["name"])
+        self.assertNotIn("name", fm)
+        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        before = self.path.read_bytes()
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+
+
 class TestEventType(WriterTestCase):
     """Event types are inferred when unset and sticky once present."""
 
@@ -1478,9 +1528,9 @@ class TestYamlScalarQuoting(WriterTestCase):
         cw.upsert(self.data, row)
         path = cw.note_path(self.data, row)
         text = path.read_text(encoding="utf-8")
-        self.assertIn('name: "2026"', text)
+        self.assertIn('event_name: "2026"', text)
         fm, _ = cw._read_frontmatter(path)
-        self.assertEqual(fm["name"], "2026")
+        self.assertEqual(fm["event_name"], "2026")
 
 
 class TestCfpTemplate(unittest.TestCase):
@@ -1499,7 +1549,7 @@ class TestCfpTemplate(unittest.TestCase):
         None,
     )
     REQUIRED = {
-        "type", "name", "event_date", "location", "country", "cfp_close",
+        "type", "event_name", "event_date", "location", "country", "cfp_close",
         "topics", "event_url", "cfp_url", "source", "shortlist", "submissions",
         "created", "updated",
     }

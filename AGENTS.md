@@ -115,7 +115,7 @@ One note per conference, written by `src/cfp_writer.py`. Frontmatter:
 
 ```yaml
 type: cfp
-name: <conference name>
+event_name: <conference name>
 event_date: 2027-04-01          # start date only, clean YYYY-MM-DD (or "TBA")
 event_type: conference          # inferred: conference | meetup | summit | workshop | hackathon | webinar | other
 location: Pasadena, CA (USA)
@@ -163,10 +163,11 @@ currently change nothing the base reads. Kept for reference / if the report retu
 ## Pitfalls
 
 - **The source-owned fields are regenerated; everything else survives a refresh.**
-  `name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
+  `event_name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
   `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `submissions`, the
   `## Notes` body, and any *extra* frontmatter property you add (e.g. `priority`,
   `tags`, a nested `contact:` map) are preserved. `type: cfp` is fixed.
+  Legacy `name` is a fallback for `event_name`. A rewrite removes `name`. Renaming this key alone does not advance `updated`.
 - **`event_type` is inferred once, then sticky.** New/unset notes use `infer_event_type(name)`:
   name keywords select `meetup` (including `meet-up`/`meet up`), `summit`, `workshop`,
   `hackathon`, or `webinar`; everything else defaults to `conference`. `other` is available

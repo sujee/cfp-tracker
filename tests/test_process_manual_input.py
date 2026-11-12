@@ -128,7 +128,7 @@ class TestMainEndToEnd(unittest.TestCase):
                 },
             )
             agentic = (out / "2027/2027_agentic-ai-summit-2027.md").read_text(encoding="utf-8")
-            self.assertIn("\nname: Agentic AI Summit 2027\n", agentic)
+            self.assertIn("\nevent_name: Agentic AI Summit 2027\n", agentic)
             self.assertNotIn("google.com/url", agentic)
             self.assertIn("source: manual", notes[0].read_text(encoding="utf-8"))
 

@@ -224,6 +224,8 @@ Every source adapter passes a mapping with these logical fields to the shared wr
 | `cfp_url` | string | Yes | Submission/CFP page, or empty. UTM parameters are removed; also used for duplicate matching. |
 | `source` | string | Yes | Normally `manual`, `developers.events`, `cfp.ninja`, `confs.tech`, or `adato-tracker`. |
 
+The common row's `name` field becomes `event_name` in note frontmatter. Other scalar field names stay unchanged.
+
 Intermediate source values such as developers.events `durations`, `misc`, `online`, `flag`, and `focus` do not become note properties.
 
 ## 6. CFP note specification
@@ -235,7 +237,7 @@ A generated note has the following shape and property order:
 ```markdown
 ---
 type: cfp
-name: Example Conference 2027
+event_name: Example Conference 2027
 event_date: 2027-04-01
 event_type: conference
 location: Pasadena, CA (USA)
@@ -264,7 +266,7 @@ _Add notes here._
 
 The following scalar properties are source-owned and semantically compared on refresh:
 
-- `name`
+- `event_name`
 - `event_date`
 - `location`
 - `country`
@@ -321,6 +323,7 @@ This produces the following refresh behavior:
 - `shortlist` values `true`, `yes`, `on`, and `1`, case-insensitively after string conversion, normalize to true; other values normalize to false.
 - Existing `submissions` may be a block list, flow list, or scalar. A nonempty scalar becomes a one-element list.
 - Legacy scalar `submission` is used only when `submissions` is absent, and migrates to `submissions` on the next rewrite.
+- Legacy `name` populates `event_name` when `event_name` is empty. The next rewrite removes `name`. This shape migration does not advance a valid `updated` stamp.
 - Legacy `conf_date` can populate `event_date` during normalization only when `event_date` is empty; the legacy key is not re-emitted.
 - Leading repeated Notes headings and placeholder lines are collapsed when body notes are extracted.
 - An empty body is replaced with `_Add notes here._`.
@@ -1063,7 +1066,7 @@ Other 2xx statuses count as not-200. A 403 or 429 response means blocked/rate-li
 type == "cfp"
 ```
 
-Its `Event` formula links to `file.path`, displaying `name` when truthy and otherwise `file.name`.
+Its `Event` formula links to `file.path`, displaying `event_name` when truthy and otherwise `file.name`.
 
 Data views use the path-suffix predicate `formula.is_in_data`. Every view has **(+dismissed)** and **(-dismissed)** versions. The plus version includes dismissed notes. The minus version hides them. Standard data views use `formula.is_live`, while their plus variants use `formula.is_in_data`. Archived follows the same naming pattern. **Dismissed (-dismissed)** is empty by definition.
 
