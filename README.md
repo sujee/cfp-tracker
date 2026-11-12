@@ -133,7 +133,7 @@ Every view has a **(+dismissed)** version and a **(-dismissed)** version. The pl
 - Do a run to update CFPS.  See [quick start](#Quick-start)
 - Check `cfps.base` in Obsidian
 - Browse CFPs and shortlist the the one's you are interested in - by selecting the **short listed** flag
-- Not interested in one? Add the property `dismissed: true` to its note. **(-dismissed)** views hide it immediately. The corresponding **(+dismissed)** view still shows it. No pipeline run is needed. The note stays in `data/`, so your notes and history survive a refresh. Clear the flag to bring it back. **Dismissed (+dismissed)** lists all dismissed notes.
+- Not interested in one? Check `dismissed = true`. **(-dismissed)** views hide it immediately. The corresponding **(+dismissed)** view still shows it. Clear the flag to bring it back. **Dismissed (+dismissed)** lists all dismissed notes.
 
 ## Options
 
