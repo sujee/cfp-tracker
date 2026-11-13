@@ -1,6 +1,6 @@
 # PythonDeadlin.es
 
-- Status: Recommended next
+- Status: Implemented
 - Official/source URL(s): [`jesperdramsch/python-deadlines`](https://github.com/jesperdramsch/python-deadlines)
 - Interface: [`_data/conferences.yml`](https://raw.githubusercontent.com/jesperdramsch/python-deadlines/main/_data/conferences.yml)
 - Verification: 2026-11-11

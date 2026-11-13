@@ -8,6 +8,7 @@ Source notes verified 2026-11-11 unless a detail page says otherwise. Each sourc
 |---|---|---|
 | [developers.events](sources/developers-events.md) | `all-cfps.json`, `all-events.json` | Primary; filter `untilDate`, not `conf.status`. |
 | [cfp.ninja](sources/cfp-ninja.md) | `api/v0/events` | Public API; filter `cfp_close_at`; includes benefits. |
+| [PythonDeadlin.es](sources/pythondeadlines.md) | `_data/conferences.yml` | Python speaking CFPs; MIT; require `cfp_link`. |
 | [confs.tech](sources/confs-tech.md) | `conferences/<year>/<topic>.json` | MIT; `cfpUrl` + `cfpEndDate`; no `ai` topic file. |
 | [adato-tracker](sources/adato-tracker.md) | HTML table | Aggregator; use the table, not RSS. |
 | [Open Tech CFPs](sources/open-tech-cfps.md) | `api/open.json`, `api/closed.json` | CC BY 4.0; Sessionize-derived; filter `cfp_close_utc`; lowest priority. |
@@ -25,7 +26,6 @@ See `sources.py` for the canonical registry.
 
 | Source | Input | Notes |
 |---|---|---|
-| [PythonDeadlin.es](sources/pythondeadlines.md) | `_data/conferences.yml` | Python speaking CFPs; MIT. |
 | [TechConf Spain](sources/techconf-spain.md) | `events[]` JSON | Spain; structured dates/locations; CC BY 4.0. |
 | [AgentConfs](sources/agentconfs.md) | `data/events.json` | AI; CC BY 4.0; filter out academic-paper CFPs. |
 | [devopsdays](sources/devopsdays.md) | `data/events/<year>/<city>/main.yml` | Official series data; Apache 2.0; cache repository discovery. |

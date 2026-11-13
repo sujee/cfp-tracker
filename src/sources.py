@@ -23,9 +23,10 @@ class SourceSpec:
 SOURCE_SPECS = (
     SourceSpec("developers.events", "process-developer-events.py", 1),
     SourceSpec("cfp.ninja", "process-cfp-ninja.py", 2),
-    SourceSpec("confs.tech", "process-confs-tech.py", 3),
-    SourceSpec("adato-tracker", "process-adato-tracker.py", 4),
-    SourceSpec("open-tech-cfps", "process-open-tech-cfps.py", 5),
+    SourceSpec("python-deadlines", "process-python-deadlines.py", 3),
+    SourceSpec("confs.tech", "process-confs-tech.py", 4),
+    SourceSpec("adato-tracker", "process-adato-tracker.py", 5),
+    SourceSpec("open-tech-cfps", "process-open-tech-cfps.py", 6),
     SourceSpec("manual", "process-manual-input.py", 0),
 )
 SOURCE_NAMES = tuple(spec.name for spec in SOURCE_SPECS)
@@ -69,6 +70,10 @@ def collect_source(name: str, context: RunContext) -> list[dict]:
     if name == "developers.events":
         return module.collect_rows(context.cutoff, context.cache, context.offline)
     if name == "cfp.ninja":
+        rows = module.collect_rows(
+            context.cutoff, context.today, context.cache, offline=context.offline
+        )
+    elif name == "python-deadlines":
         rows = module.collect_rows(
             context.cutoff, context.today, context.cache, offline=context.offline
         )

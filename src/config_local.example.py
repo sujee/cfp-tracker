@@ -23,6 +23,7 @@ CONFS_TECH_TOPICS = {
 INPUT_SOURCES = [
     "developers.events",
     "cfp.ninja",
+    "python-deadlines",
     "confs.tech",
     "adato-tracker",
     "open-tech-cfps",
