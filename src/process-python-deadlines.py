@@ -16,12 +16,13 @@ from http_cache import fetch_text
 YAML_URL = "https://raw.githubusercontent.com/jesperdramsch/python-deadlines/main/_data/conferences.yml"
 
 
-def _validate_text(text: str) -> None:
+def _validate_text(text: str) -> bool:
     data = yaml.safe_load(text)
     if not isinstance(data, list) or not data:
         raise ValueError("python-deadlines: expected a nonempty YAML list")
     if not all(isinstance(item, dict) for item in data):
         raise ValueError("python-deadlines: expected every entry to be a mapping")
+    return True
 
 
 def _fetch_text(

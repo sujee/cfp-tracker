@@ -973,6 +973,20 @@ def upsert(
             ):
                 return "skipped"
 
+    # A source that does not know a location must not clobber one already
+    # curated on the note: ``—`` / empty means "unknown", not a real value.
+    # Preserve the existing location in that case so a refresh cannot erase
+    # hand-entered venue data (and the no-op short-circuit below still fires).
+    _PLACEHOLDER_LOCATIONS = {"", "—", "-"}
+    incoming_location = _as_str(row.get("location")).strip()
+    existing_location = _as_str(fm.get("location")).strip()
+    if (
+        incoming_location in _PLACEHOLDER_LOCATIONS
+        and existing_location
+        and existing_location not in _PLACEHOLDER_LOCATIONS
+    ):
+        row = {**row, "location": existing_location}
+
     # Topics and languages accumulate across refreshes instead of being
     # replaced by the current source row. Merge before comparing so an
     # unchanged cumulative list remains a no-op and only genuinely new
