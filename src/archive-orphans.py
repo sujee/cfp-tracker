@@ -38,20 +38,27 @@ def load_manifests(paths) -> set[str]:
 
 
 def has_manual_changes(fm: dict, body: str) -> bool:
-    """Return whether a note contains user curation instead of generated defaults."""
+    """Return whether a note contains user curation instead of generated defaults.
+
+    The writer-owned ``## Conflict`` section is not curation: the pipeline
+    regenerates it on every rewrite, so a conflict alone must not keep an
+    unproduced note alive.
+    """
     from cfp_writer import (
         KNOWN_FM_KEYS,
         _as_bool,
         _as_str,
         _extract_body_notes,
         _read_submissions,
+        _split_conflict_section,
     )
 
+    notes, _conflict = _split_conflict_section(_extract_body_notes(body))
     custom_keys = set(fm) - KNOWN_FM_KEYS - {"tier"}
     return bool(
         _as_bool(fm.get("shortlist"))
         or _read_submissions(fm)
-        or _extract_body_notes(body)
+        or notes
         or _as_str(fm.get("notes")).strip()
         or custom_keys
     )

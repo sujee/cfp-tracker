@@ -96,8 +96,8 @@ class TestNewAndUnchanged(WriterTestCase):
 
         fm = self.frontmatter()
         self.assertIs(fm["dismissed"], False)
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         after = self.path.read_bytes()
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
         self.assertEqual(self.path.read_bytes(), after)
@@ -119,6 +119,75 @@ class TestNewAndUnchanged(WriterTestCase):
         self.assertEqual(status, "updated")
         self.assertEqual(self.frontmatter()["location"], "Barcelona, Spain")
 
+
+class TestPlaceholderLocation(WriterTestCase):
+    """An unknown/blank incoming location must not erase a curated one."""
+
+    def test_placeholder_location_is_not_written_over_curated(self) -> None:
+        self.write_initial()
+        created = self.frontmatter()["created"]
+        self.edit("location: Online", "location: New York, USA")
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="—"), today="2026-11-09"), "updated"
+        )
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "New York, USA")
+        self.assertEqual(fm["created"], created)
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 9, 0, 0))
+        self.assertIs(fm["conflict"], True)
+        self.assertNotIn("conflict_fields", fm)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("## Conflict", text)
+        self.assertIn("location: kept `New York, USA`, source says `—`", text)
+
+        # The same blank source on the next run keeps the conflict without
+        # rewriting the note or duplicating the section.
+        before = self.path.read_bytes()
+        self.assertEqual(cw.upsert(self.data, sample_row(location="—"), today="2026-11-10"), "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(self.path.read_text(encoding="utf-8").count("## Conflict"), 1)
+
+    def test_empty_location_is_not_written_over_curated(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "location: New York, USA")
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location=""), today="2026-11-09"), "updated"
+        )
+        self.assertEqual(self.frontmatter()["location"], "New York, USA")
+        self.assertIs(self.frontmatter()["conflict"], True)
+
+    def test_source_catching_up_clears_the_conflict(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "location: New York, USA")
+        cw.upsert(self.data, sample_row(location="—"), today="2026-11-09")
+        self.assertIs(self.frontmatter()["conflict"], True)
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="New York, USA"), today="2026-11-10"),
+            "updated",
+        )
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "New York, USA")
+        self.assertNotIn("conflict", fm)
+        self.assertNotIn("conflict_fields", fm)
+        self.assertNotIn("## Conflict", self.path.read_text(encoding="utf-8"))
+
+    def test_placeholder_location_still_writes_a_new_note(self) -> None:
+        status = cw.upsert(self.data, sample_row(location="—"))
+        self.assertEqual(status, "new")
+        self.assertEqual(self.frontmatter()["location"], "—")
+
+    def test_real_location_still_overrides(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "location: New York, USA")
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="Barcelona, Spain")), "updated"
+        )
+        self.assertEqual(self.frontmatter()["location"], "Barcelona, Spain")
+
     def test_quoting_difference_alone_is_unchanged(self) -> None:
         # SEMANTIC compare: re-quoting a value must not force a rewrite.
         self.write_initial()
@@ -126,6 +195,105 @@ class TestNewAndUnchanged(WriterTestCase):
         before = self.path.read_bytes()
         self.assertEqual(cw.upsert(self.data, self.row), "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
+
+
+class TestCuratedConflicts(WriterTestCase):
+    """``curated_fields: [field]`` keeps the note's value and flags the conflict."""
+
+    def test_curated_location_keeps_note_value_on_a_real_source_change(self) -> None:
+        self.write_initial()
+        self.edit(
+            "location: Online",
+            "curated_fields: [location]\nlocation: New York, USA",
+        )
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-09"),
+            "updated",
+        )
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "New York, USA")
+        self.assertEqual(fm["curated_fields"], ["location"])
+        self.assertIs(fm["conflict"], True)
+        self.assertNotIn("conflict_fields", fm)
+        self.assertIn(
+            "location: kept `New York, USA`, source says `Barcelona, Spain`",
+            self.path.read_text(encoding="utf-8"),
+        )
+
+    def test_removing_curated_lets_the_source_take_over(self) -> None:
+        self.write_initial()
+        self.edit(
+            "location: Online",
+            "curated_fields: [location]\nlocation: New York, USA",
+        )
+        cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-09")
+        self.assertIs(self.frontmatter()["conflict"], True)
+
+        self.edit("curated_fields: [location]\n", "")
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-10"),
+            "updated",
+        )
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Barcelona, Spain")
+        self.assertNotIn("conflict", fm)
+        self.assertNotIn("## Conflict", self.path.read_text(encoding="utf-8"))
+
+    def test_conflict_section_is_writer_owned(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "curated_fields: [location]\nlocation: New York, USA")
+        cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-09")
+        self.edit("source says `Barcelona, Spain`", "source says `somewhere else`")
+
+        self.assertEqual(
+            cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-10"),
+            "updated",
+        )
+        self.assertIn(
+            "source says `Barcelona, Spain`",
+            self.path.read_text(encoding="utf-8"),
+        )
+
+    def test_curated_country_and_urls_are_checked(self) -> None:
+        self.write_initial()
+        self.edit(
+            "country: Online",
+            "curated_fields: [country, event_url]\ncountry: USA",
+        )
+
+        status = cw.upsert(
+            self.data,
+            sample_row(country="Spain", event_url="https://changed.example"),
+            today="2026-11-09",
+        )
+
+        self.assertEqual(status, "updated")
+        fm = self.frontmatter()
+        self.assertEqual(fm["country"], "USA")
+        self.assertEqual(fm["event_url"], "https://powerplatform.com")
+        self.assertNotIn("conflict_fields", fm)
+        text = self.path.read_text(encoding="utf-8")
+        self.assertIn("country: kept `USA`, source says `Spain`", text)
+        self.assertIn(
+            "event_url: kept `https://powerplatform.com`, source says `https://changed.example`",
+            text,
+        )
+
+    def test_normalize_preserves_curated_and_the_conflict_section(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "curated_fields: [location]\nlocation: New York, USA")
+        cw.upsert(self.data, sample_row(location="Barcelona, Spain"), today="2026-11-09")
+        before = self.path.read_bytes()
+
+        self.assertTrue(cw.normalize_file(self.path, today="2026-11-10"))
+
+        self.assertEqual(self.path.read_bytes(), before)
+        fm = self.frontmatter()
+        self.assertEqual(fm["curated_fields"], ["location"])
+        self.assertIs(fm["conflict"], True)
+        self.assertNotIn("conflict_fields", fm)
+        self.assertIn("## Conflict", self.path.read_text(encoding="utf-8"))
 
     def test_new_source_topics_are_merged_with_existing_topics(self) -> None:
         self.write_initial()
@@ -172,8 +340,8 @@ class TestEventNameMigration(WriterTestCase):
         fm = self.frontmatter()
         self.assertEqual(fm["event_name"], self.row["name"])
         self.assertNotIn("name", fm)
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         after = self.path.read_bytes()
         cw.normalize_file(self.path, today="2026-11-10")
         self.assertEqual(self.path.read_bytes(), after)
@@ -190,7 +358,7 @@ class TestEventNameMigration(WriterTestCase):
         fm = self.frontmatter()
         self.assertEqual(fm["event_name"], self.row["name"])
         self.assertNotIn("name", fm)
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         before = self.path.read_bytes()
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
@@ -298,8 +466,8 @@ class TestEventType(WriterTestCase):
         self.assertEqual(status, "updated")
         fm = self.frontmatter()
         self.assertEqual(fm["event_type"], "conference")
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         before = self.path.read_bytes()
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-10"), "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
@@ -312,7 +480,7 @@ class TestEventType(WriterTestCase):
 
         fm = self.frontmatter()
         self.assertEqual(fm["event_type"], "conference")
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         after_first = self.path.read_bytes()
         cw.normalize_file(self.path, today="2026-11-10")
         self.assertEqual(self.path.read_bytes(), after_first)
@@ -521,14 +689,14 @@ class TestTopicsPreserved(WriterTestCase):
             topics=["microsoft", "cloud", "automation", "ai"]
         )
         self.assertEqual(cw.upsert(self.data, incoming, today="2026-11-09"), "updated")
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 9, 0, 0))
         before = self.path.read_bytes()
 
         status = cw.upsert(self.data, incoming, today="2026-11-10")
 
         self.assertEqual(status, "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 9, 0, 0))
 
     def test_duplicate_new_incoming_topics_are_appended_once(self) -> None:
         self.write_initial()
@@ -594,8 +762,8 @@ class TestCreatedUpdated(WriterTestCase):
     def test_new_note_gets_today_for_both_stamps(self) -> None:
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "new")
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
 
     def test_noop_refresh_preserves_stamps_and_touches_nothing(self) -> None:
         cw.upsert(self.data, self.row, today="2026-11-06")
@@ -607,8 +775,8 @@ class TestCreatedUpdated(WriterTestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(self.path.stat().st_mtime_ns, mtime)
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
 
     def test_source_change_bumps_updated_but_preserves_created(self) -> None:
         cw.upsert(self.data, self.row, today="2026-11-06")
@@ -617,8 +785,8 @@ class TestCreatedUpdated(WriterTestCase):
             "updated",
         )
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 9, 0, 0))
 
     def test_note_missing_stamps_is_backfilled_on_refresh(self) -> None:
         # A note created before the stamps existed: props match, so the only
@@ -636,16 +804,16 @@ class TestCreatedUpdated(WriterTestCase):
         )
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-06"), "updated")
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
 
     def test_garbled_stamp_backfills_to_created(self) -> None:
         cw.upsert(self.data, self.row, today="2026-11-06")
-        self.edit("updated: 2026-11-06", 'updated: "soon"')
+        self.edit("updated: 2026-11-06T00:00:00", 'updated: "soon"')
         # Props match, so this is a stamp back-fill, not a data update:
         # ``updated`` mirrors ``created`` instead of jumping to the run date.
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 6, 0, 0))
 
     def test_missing_updated_backfills_to_created(self) -> None:
         # An existing note that already carries ``created`` gets ``updated``
@@ -663,8 +831,8 @@ class TestCreatedUpdated(WriterTestCase):
         )
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
-        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["created"], datetime.datetime(2025, 3, 4, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2025, 3, 4, 0, 0))
 
     def test_missing_created_backfills_to_updated(self) -> None:
         # The mirror case: a lone ``updated`` dates ``created``, so a back-fill
@@ -682,16 +850,16 @@ class TestCreatedUpdated(WriterTestCase):
         )
         self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-09"), "updated")
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
-        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["created"], datetime.datetime(2025, 3, 4, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2025, 3, 4, 0, 0))
 
     def test_user_stamps_do_not_force_rewrites(self) -> None:
         # Hand-maintained stamps are not compared: a note whose stamps differ
         # from today's date still reports unchanged.
         cw.upsert(self.data, self.row, today="2026-11-06")
-        self.edit("created: 2026-11-06", "created: 2025-01-02")
+        self.edit("created: 2026-11-06T00:00:00", "created: 2025-01-02T00:00:00")
         self.assertEqual(cw.upsert(self.data, self.row, today="2030-05-05"), "unchanged")
-        self.assertEqual(self.frontmatter()["created"], datetime.date(2025, 1, 2))
+        self.assertEqual(self.frontmatter()["created"], datetime.datetime(2025, 1, 2, 0, 0))
 
     def test_normalize_backfills_missing_stamps_and_is_idempotent(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -707,17 +875,17 @@ class TestCreatedUpdated(WriterTestCase):
         )
         self.assertTrue(cw.normalize_file(self.path, today="2026-11-06"))
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2026, 11, 6))
-        self.assertEqual(fm["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(fm["created"], datetime.datetime(2026, 11, 6, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         after = self.path.read_bytes()
         cw.normalize_file(self.path, today="2026-11-06")
         self.assertEqual(self.path.read_bytes(), after)  # idempotent: stamps kept
 
     def test_normalize_preserves_existing_stamps(self) -> None:
         cw.upsert(self.data, self.row, today="2026-11-06")
-        self.edit("updated: 2026-11-06", "updated: 2026-11-07")
+        self.edit("updated: 2026-11-06T00:00:00", "updated: 2026-11-07T00:00:00")
         self.assertTrue(cw.normalize_file(self.path, today="2026-11-20"))
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 7))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 7, 0, 0))
 
     def test_normalize_mirrors_created_when_updated_is_missing(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -733,8 +901,8 @@ class TestCreatedUpdated(WriterTestCase):
         )
         self.assertTrue(cw.normalize_file(self.path, today="2026-11-09"))
         fm = self.frontmatter()
-        self.assertEqual(fm["created"], datetime.date(2025, 3, 4))
-        self.assertEqual(fm["updated"], datetime.date(2025, 3, 4))
+        self.assertEqual(fm["created"], datetime.datetime(2025, 3, 4, 0, 0))
+        self.assertEqual(fm["updated"], datetime.datetime(2025, 3, 4, 0, 0))
 
 
 class TestUserContentPreserved(WriterTestCase):
@@ -1318,14 +1486,14 @@ class TestLanguages(WriterTestCase):
         )
         incoming = sample_row(languages=["english", "spanish", "french"])
         self.assertEqual(cw.upsert(self.data, incoming, today="2026-11-09"), "updated")
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 9, 0, 0))
         before = self.path.read_bytes()
 
         status = cw.upsert(self.data, incoming, today="2026-11-10")
 
         self.assertEqual(status, "unchanged")
         self.assertEqual(self.path.read_bytes(), before)
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 9, 0, 0))
 
     def test_duplicate_new_incoming_languages_are_appended_once(self) -> None:
         self.assertEqual(
@@ -1371,13 +1539,13 @@ class TestLanguages(WriterTestCase):
             cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-06"),
             "new",
         )
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         self.edit("languages: [spanish]", "languages: [Spanish]")
 
         status = cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-09")
 
         self.assertEqual(status, "updated")
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 9))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 9, 0, 0))
         self.assertEqual(self.frontmatter()["languages"], ["spanish"])
         self.assertIn("languages: [spanish]", self.path.read_text(encoding="utf-8"))
 
@@ -1388,7 +1556,7 @@ class TestLanguages(WriterTestCase):
             cw.upsert(self.data, sample_row(languages=["spanish"]), today="2026-11-06"),
             "new",
         )
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         self.edit("languages: [spanish]", "languages: [Spanish]")
         created = self.frontmatter()["created"]
 
@@ -1399,7 +1567,7 @@ class TestLanguages(WriterTestCase):
         after = self.path.read_bytes()
         # A shape pass is not a data update: stamps are preserved...
         self.assertEqual(self.frontmatter()["created"], created)
-        self.assertEqual(self.frontmatter()["updated"], datetime.date(2026, 11, 6))
+        self.assertEqual(self.frontmatter()["updated"], datetime.datetime(2026, 11, 6, 0, 0))
         # ...and the second pass is a no-op.
         cw.normalize_file(self.path)
         self.assertEqual(self.path.read_bytes(), after)
@@ -1822,7 +1990,8 @@ class TestCfpTemplate(unittest.TestCase):
 
     # ``event_type`` is inferred and back-filled, so older hand templates may
     # legitimately omit it until the note's next refresh/normalization.
-    OPTIONAL = {"benefits", "languages", "event_type"}
+    # ``curated_fields`` is a user-owned opt-in and stays empty by default.
+    OPTIONAL = {"benefits", "languages", "event_type", "curated_fields"}
 
     @unittest.skipUnless(TEMPLATE, "templates/cfp-template.md not found")
     def test_template_keys_match_a_generated_note(self) -> None:
@@ -1879,7 +2048,7 @@ class SetPropertyTestCase(unittest.TestCase):
         self.assertEqual(fm["shortlist"], False)
         # Stamps track source rewrites, not curation.
         self.assertEqual(cw._as_str(fm["created"]), cw._as_str(before["created"]))
-        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01")
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01T00:00:00")
         self.assertIn("tier: 2", afters)
 
     def test_writer_preserves_the_property_on_a_later_refresh(self) -> None:
@@ -1894,12 +2063,12 @@ class SetPropertyTestCase(unittest.TestCase):
         fm, _ = cw._read_frontmatter(self.path)
         self.assertEqual(fm["tier"], 1)
         self.assertEqual(fm["location"], "Barcelona")
-        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-02")
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-02T00:00:00")
 
     def test_updated_stamp_is_not_advanced_by_curation(self) -> None:
         cw.set_property(self.path, "tier", 3)
         fm, _ = cw._read_frontmatter(self.path)
-        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01")
+        self.assertEqual(cw._as_str(fm["updated"]), "2026-11-01T00:00:00")
 
     def test_unparseable_frontmatter_raises(self) -> None:
         bad = self.data / "bad.md"

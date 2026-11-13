@@ -60,6 +60,8 @@ properties:
     displayName: Event date
   location:
     displayName: Location
+  conflict:
+    displayName: Conflict
   cfp_close:
     displayName: CFP close
   updated:
@@ -93,6 +95,27 @@ views:
       formula.cfp_title: 274
       note.location: 201
       note.topics: 181
+  - type: table
+    name: Conflicts
+    filters:
+      and:
+        - 'formula.is_in_data'
+        - 'conflict == true'
+    order:
+      - cfp_close
+      - formula.cfp_title
+      - location
+      - country
+      - source
+      - updated
+    sort:
+      - property: updated
+        direction: DESC
+    columnSize:
+      note.cfp_close: 129
+      formula.cfp_title: 274
+      note.location: 201
+      note.updated: 180
   - type: table
     name: All (+dismissed)
     filters:
@@ -224,6 +247,17 @@ views:
     sort:
       - property: updated
         direction: DESC
+    columnSize:
+      note.cfp_close: 109
+      note.tier: 58
+      note.shortlist: 42
+      note.dismissed: 67
+      formula.cfp_title: 274
+      note.event_date: 139
+      note.location: 201
+      note.topics: 181
+      note.event_url: 212
+      note.cfp_url: 253
   - type: table
     name: Recently Updated (-dismissed)
     filters:

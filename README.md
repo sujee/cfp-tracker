@@ -124,6 +124,9 @@ Personalize the location views in the `formulas` section of `cfps.base`:
 3. Set `shortlist: true` for interesting events.
 4. Set `dismissed: true` to hide an event from live views.
 5. Add wiki links to `submissions` after you submit a talk.
+6. To keep a source field you edited, add it to `curated_fields`, for example
+   `curated_fields: [location]`. A source disagreement keeps your value and appears in the
+   **Conflicts** view and the note's `## Conflict` section.
 
 Most views let you include or exclude dismissed notes.
 

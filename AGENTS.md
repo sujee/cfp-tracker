@@ -175,11 +175,25 @@ source: developers.events      # developers.events | cfp.ninja | confs.tech | ad
 shortlist: false               # user flag, preserved across runs
 dismissed: false               # user flag, defaults false and preserved across runs; true hides live views
 submissions: []                # wiki links (a list), preserved across runs
-created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
-updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
+curated_fields: [location]      # optional; source fields the user owns
+created: 2026-11-06T00:00:00  # pipeline stamp: first-seen timestamp, set once
+updated: 2026-11-06T00:00:00  # pipeline stamp: last source-driven rewrite
+conflict: true                 # optional; computed when a curated or blank-source conflict exists
 replaces: [2026-11-01_old-name.md]  # optional; migrated predecessor lineage, relative to data/
 tier: 1                        # optional; curated from prestige.md (1 flagship, 2 major, 3 notable)
 ```
+
+`created` and `updated` are ISO timestamps. A date-only legacy stamp is upgraded to midnight
+(`YYYY-MM-DDT00:00:00`) on the next rewrite. `normalize-data.py` performs that upgrade for the
+whole tree.
+
+`curated_fields` lists the source-owned fields the user owns. The writer checks `location`,
+`country`, `event_url`, and `cfp_url`; `event_name`, `event_date`, and `cfp_close` still define the
+note path and stay source-owned. A source value that differs from a curated field is a conflict.
+The writer keeps the note's value, sets `conflict: true`, writes a writer-owned `## Conflict` body
+section that names the field and both values, and prints a warning. A blank location is also a
+conflict when the note has a real one, even without `curated_fields`. When the source matches the
+note again, or the field leaves `curated_fields`, the conflict clears and the section is removed.
 
 `replaces` appears only on notes migrated from another path. It records data-relative predecessor
 paths. The reconciler uses it to prevent a later refresh from merging the same predecessor again.
@@ -193,7 +207,9 @@ compare `tier == 1`; it is not in `KNOWN_FM_KEYS`, so the writer treats it as us
 re-emits it verbatim on every rewrite.
 
 Then a body with a `## Notes` heading and the free-form notes. **Notes live only in the body**
-— there is no `notes` frontmatter field.
+— there is no `notes` frontmatter field. A note with an unresolved conflict also has a
+writer-owned `## Conflict` section before `## Notes`. That section lists each field, the kept
+value, and the source value. Do not hand-edit it; the next refresh regenerates it.
 
 A hand-created CFP note should start from `templates/cfp-template.md` at the vault root (the
 core Templates plugin folder). It carries exactly the keys above — verified to match what
@@ -205,10 +221,11 @@ Quoting: every value is emitted through `cfp_writer._yaml_str` (and `_yaml_list`
 `benefits` and `languages`), so names containing `": "`, quotes, leading indicators, or newlines
 are double-quoted and stay valid YAML. A value YAML would otherwise retype is quoted too —
 `365`, `2026`, `1.0`, `yes`, `null` resolve to int/float/bool/null, so a topic `365` is written
-`"365"` and reads back as a string (`_yaml_reads_as_non_string`). ISO dates are the deliberate
-exception: `event_date`, `cfp_close`, `created` and `updated` stay unquoted so PyYAML types them
-as dates and Obsidian maps them to its date property; `_as_str` turns them back into
-`YYYY-MM-DD`. `shortlist` and `dismissed` are written as bare `true`/`false` booleans.
+`"365"` and reads back as a string (`_yaml_reads_as_non_string`). ISO dates and timestamps are the
+deliberate exception: `event_date` and `cfp_close` stay unquoted so PyYAML types them as dates,
+and `created`/`updated` stay unquoted so PyYAML types them as datetimes. Obsidian maps them to
+its date property, and `_as_str` turns them back into their ISO form. `shortlist` and
+`dismissed` are written as bare `true`/`false` booleans.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 
@@ -274,18 +291,31 @@ External callers must pass both manifest types and protect other paused sources 
   `english`) — a pre-existing capitalised note reads as one mismatch, is rewritten
   lowercase on the next refresh, and then settles. The one exception is `benefits`,
   which is replaced on update.
-- **`created` and `updated` are pipeline stamps, not source fields.** `created` is written
-  when the note first appears and preserved afterwards; `updated` is advanced to the run date
-  only when a source change rewrites the note (a no-op refresh changes neither). They are
-  deliberately **not** part of the source-property compare: comparing them with today would
-  rewrite every note on every run. A missing or non-`YYYY-MM-DD` stamp back-fills without
+- **`created` and `updated` are pipeline timestamps, not source fields.** `created` is written
+  when the note first appears and preserved afterwards; `updated` is advanced to the run
+  timestamp only when a source or conflict change rewrites the note (a no-op refresh changes
+  neither). They are deliberately **not** part of the source-property compare: comparing them
+  with now would rewrite every note on every run. A missing or invalid stamp back-fills without
   counting as an update: a note that has one stamp copies it to the other, so existing notes
-  start with `updated` equal to `created`, and a hand-typed valid date is left alone.
-  `normalize_file` applies the same back-fill and preserves present stamps (a shape pass is
-  not a data update), which is how the whole tree was populated. For notes that predate the
-  stamps, `created`/`updated` were recovered from the note's first add commit in the vault's
-  git history (following renames), so they carry the real first-seen date rather than the day
-  the stamps were introduced.
+  start with `updated` equal to `created`, and a hand-typed valid timestamp is left alone.
+  A legacy date-only stamp stays valid and is upgraded to midnight on the next rewrite.
+  `normalize_file` applies the same back-fill and timestamp upgrade while preserving present
+  stamps (a shape pass is not a data update), which is how the whole tree was populated. For
+  notes that predate the stamps, `created`/`updated` were recovered from the note's first add
+  commit in the vault's git history (following renames), so they carry the real first-seen
+  date rather than the day the stamps were introduced.
+- **`curated_fields` wins a conflict, and the conflict is visible.** `curated_fields` is a
+  user-owned list of source field names. The writer checks `location`, `country`, `event_url`, and
+  `cfp_url` (the fields that do not drive the note path). When the source value differs, the note
+  value is kept, `conflict: true` is written, and a writer-owned `## Conflict` body section records
+  the field and both values. A blank location is also a conflict when the note has a real one,
+  without needing `curated_fields`. The conflict clears when the source matches the note or the
+  field leaves `curated_fields`. `curated_fields` is not in `KNOWN_FM_KEYS`, so the writer
+  preserves it verbatim and the archiver treats it as user curation. `conflict` is in
+  `KNOWN_FM_KEYS`, so it is recomputed on each write and does not keep a dropped note alive.
+  The generated `## Conflict` body section is not user curation either, so a conflict alone
+  does not keep a dropped note live.
+  The `Conflicts` view in `cfps.base` filters on `conflict == true`.
 - **A refresh only rewrites a note whose source properties actually changed.** Before
   writing, `upsert` compares each source-owned property in the existing note (semantic
   compare — quoting/formatting differences do not count) and skips the write when all

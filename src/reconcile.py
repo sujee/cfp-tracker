@@ -29,11 +29,15 @@ class Existing:
 
     @property
     def curated(self) -> bool:
+        # The writer-owned ``## Conflict`` section is generated, not curation.
+        notes, _conflict = writer._split_conflict_section(
+            writer._extract_body_notes(self.body)
+        )
         custom = set(self.fm) - writer.KNOWN_FM_KEYS - {"tier"}
         return bool(
             writer._as_bool(self.fm.get("shortlist"))
             or writer._read_submissions(self.fm)
-            or writer._extract_body_notes(self.body)
+            or notes
             or writer._as_str(self.fm.get("notes")).strip()
             or custom
         )

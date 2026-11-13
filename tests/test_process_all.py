@@ -209,8 +209,8 @@ class PipelineTest(unittest.TestCase):
             )
         self.assertEqual(result, 0)
         fm, _ = writer._read_frontmatter(writer.note_path(self.data, sample_row()))
-        self.assertEqual(str(fm["created"]), "2026-01-15")
-        self.assertEqual(str(fm["updated"]), "2026-01-15")
+        self.assertEqual(writer._as_str(fm["created"]), "2026-01-15T00:00:00")
+        self.assertEqual(writer._as_str(fm["updated"]), "2026-01-15T00:00:00")
 
     def test_prestige_runs_after_archive(self) -> None:
         events = []

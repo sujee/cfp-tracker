@@ -130,6 +130,33 @@ class TestManualChanges(ArchiveTestCase):
         self.note("2026/tiered.md", "---\ntype: cfp\ntier: 1\n---\n\n## Notes\n")
         self.assertEqual(arch.find_orphans(self.data, set()), ["2026/tiered.md"])
 
+    def test_conflict_only_note_is_archived(self) -> None:
+        # ``## Conflict`` is writer-owned and regenerated on every rewrite, so a
+        # note whose only extra content is a generated conflict is not curated.
+        self.note(
+            "2026/conflicted.md",
+            "---\ntype: cfp\nconflict: true\n---\n\n"
+            "## Conflict\n\n- location: kept `New York, USA`, source says `—`\n\n"
+            "## Notes\n\n_Add notes here._\n",
+        )
+        self.assertEqual(arch.find_orphans(self.data, set()), ["2026/conflicted.md"])
+
+    def test_conflict_section_does_not_hide_body_notes(self) -> None:
+        self.note(
+            "2026/noted.md",
+            "---\ntype: cfp\nconflict: true\n---\n\n"
+            "## Conflict\n\n- location: kept `New York, USA`, source says `—`\n\n"
+            "## Notes\n\nBring the demo.\n",
+        )
+        self.assertEqual(arch.find_orphans(self.data, set()), [])
+
+    def test_curated_fields_alone_still_blocks_archiving(self) -> None:
+        self.note(
+            "2026/curated.md",
+            "---\ntype: cfp\ncurated_fields: [location]\n---\n\n## Notes\n",
+        )
+        self.assertEqual(arch.find_orphans(self.data, set()), [])
+
 
 class TestArchiveOrphans(ArchiveTestCase):
     def test_moves_orphan_and_leaves_produced(self) -> None:

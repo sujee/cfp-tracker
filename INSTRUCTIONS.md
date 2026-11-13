@@ -123,8 +123,14 @@ operation without overwriting the archived note.
 
 - Notes are generated. Do not hand-edit the source-owned fields (`event_name`, `event_date`,
   `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
-  `source`) — they are regenerated. Everything else survives a refresh: `shortlist`, `dismissed`, `submissions`,
-  the `## Notes` body, and any extra frontmatter property you add. `topics` is cumulative:
+  `source`) — they are regenerated. To keep a field you own, list it in `curated_fields`
+  (for example `curated_fields: [location]`). The writer checks `location`, `country`,
+  `event_url`, and `cfp_url`. When the source disagrees, it keeps your value, sets
+  `conflict: true`, adds a writer-owned `## Conflict` body section, and prints a warning.
+  A blank location is also a conflict when the note has a real one. The conflict clears when
+  the source matches your value or the field leaves `curated_fields`. Everything else survives a
+  refresh: `shortlist`, `dismissed`, `submissions`, the `## Notes` body, and any extra
+  frontmatter property you add. `topics` is cumulative:
   existing values are kept and new source values are appended (case-insensitive match — `English`
   and `english` are one value), so hand-added topics and topics removed/reordered upstream remain
   unchanged. Only a genuinely new topic or another source-property change rewrites the note; a
@@ -148,12 +154,15 @@ operation without overwriting the archived note.
   ignores case and applies anywhere in the name, not only at the start. The writer enforces this for
   every source before creating or rewriting a note. Skipped rows enter no manifest. Untouched notes archive normally.
   Invalid settings raise `ValueError`. `IGNORE_TOPICS` separately filters adapter-level name/topic terms.
-- `created` and `updated` are pipeline stamps (`YYYY-MM-DD`). `created` is the note's
-  first-seen date and is preserved. `updated` advances to the run date whenever a source change
-  rewrites the note; a no-op refresh leaves both untouched. A missing or invalid stamp
-  back-fills on the next refresh without counting as an update (the note's two stamps are
-  copied from each other, so existing notes start with `updated` equal to `created`), and
-  `src/normalize-data.py` applies the same back-fill to the whole tree in one pass.
+- `created` and `updated` are pipeline timestamps (`YYYY-MM-DDT00:00:00`). The refresh stamps
+  the run date at midnight, so `process-all.py` and `normalize-data.py` emit the same shape.
+  `created` is the note's first-seen timestamp and is preserved. `updated` advances to the run
+  timestamp whenever a source or conflict change rewrites the note; a no-op refresh leaves both
+  untouched. A date-only legacy stamp upgrades to midnight (`YYYY-MM-DDT00:00:00`) on the next
+  rewrite. A missing or invalid stamp back-fills on the next refresh without counting as an
+  update (the note's two stamps are copied from each other, so existing notes start with
+  `updated` equal to `created`), and `src/normalize-data.py` applies the same back-fill and
+  timestamp upgrade to the whole tree in one pass.
 - **Every code change must keep the tests green — and come with tests.** Run
   `python3 -m unittest discover -s tests -v` (stdlib only — no pytest) after any change to
   `src/`. Existing tests must pass: if a change legitimately alters behaviour, update the

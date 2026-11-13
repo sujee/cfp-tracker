@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import cfp_writer as writer
-from reconcile import reconcile_rows
+from reconcile import Existing, reconcile_rows
 
 
 def load_archiver():
@@ -71,12 +71,12 @@ class ReconcileTest(unittest.TestCase):
 
     def test_deadline_extension_migrates_curation_and_supersedes_old_path(self) -> None:
         original = row()
-        self.assertEqual(writer.upsert(self.data, original, today="2026-11-01"), "new")
+        self.assertEqual(writer.upsert(self.data, original, today="2026-11-01T00:00:00"), "new")
         old_path = writer.note_path(self.data, original)
         self.curate(old_path)
 
         current = row(cfp_close="2026-12-15")
-        result = reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01")
+        result = reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01T00:00:00")
         new_path = writer.note_path(self.data, current)
         self.assertEqual(result.produced, {new_path.relative_to(self.data).as_posix()})
         self.assertEqual(result.superseded, {old_path.relative_to(self.data).as_posix()})
@@ -87,8 +87,8 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue(fm["dismissed"])
         self.assertEqual(fm["submissions"], ["[[My talk]]"])
         self.assertEqual(fm["priority"], "high")
-        self.assertEqual(str(fm["created"]), "2026-11-01")
-        self.assertEqual(str(fm["updated"]), "2026-12-01")
+        self.assertEqual(writer._as_str(fm["created"]), "2026-11-01T00:00:00")
+        self.assertEqual(writer._as_str(fm["updated"]), "2026-12-01T00:00:00")
         self.assertIn("Bring the demo.", body)
 
         self.archive(result)
@@ -196,10 +196,10 @@ class ReconcileTest(unittest.TestCase):
 
     def test_unarchived_predecessor_does_not_overwrite_live_edits(self) -> None:
         original = row()
-        writer.upsert(self.data, original, today="2026-11-01")
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
         self.curate(writer.note_path(self.data, original))
         current = row(cfp_close="2026-12-15")
-        reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01")
+        reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01T00:00:00")
         canonical = writer.note_path(self.data, current)
         text = canonical.read_text(encoding="utf-8")
         self.assertIn("replaces:", text)
@@ -216,7 +216,7 @@ class ReconcileTest(unittest.TestCase):
         self.assertFalse(fm["dismissed"])
         self.assertEqual(fm["submissions"], [])
         self.assertNotIn("priority", fm)
-        self.assertEqual(str(fm["updated"]), "2026-12-01")
+        self.assertEqual(writer._as_str(fm["updated"]), "2026-12-01T00:00:00")
         self.assertIn("Live target edit.", body)
         self.assertNotIn("Bring the demo.", body)
         self.assertEqual(second.summaries["developers.events"]["new"], 0)
@@ -312,7 +312,7 @@ class ReconcileTest(unittest.TestCase):
 
     def test_second_path_migration_uses_live_descendant_not_old_ancestor(self) -> None:
         original = row(cfp_close="2026-12-01")
-        writer.upsert(self.data, original, today="2026-11-01")
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
         first_path = writer.note_path(self.data, original)
         self.curate(first_path)
         intermediate = row(cfp_close="2026-12-15")
@@ -342,7 +342,7 @@ class ReconcileTest(unittest.TestCase):
         self.assertFalse(fm["dismissed"])
         self.assertEqual(fm["submissions"], [])
         self.assertNotIn("priority", fm)
-        self.assertEqual(str(fm["created"]), "2026-11-01")
+        self.assertEqual(writer._as_str(fm["created"]), "2026-11-01T00:00:00")
         self.assertIn("Current intermediate edit.", body)
         self.assertNotIn("Bring the demo.", body)
         self.assertEqual(
@@ -418,7 +418,7 @@ class ReconcileTest(unittest.TestCase):
 
     def test_second_reconciliation_is_unchanged(self) -> None:
         current = row()
-        first = reconcile_rows(self.data, {"developers.events": [current]}, today="2026-11-01")
+        first = reconcile_rows(self.data, {"developers.events": [current]}, today="2026-11-01T00:00:00")
         path = writer.note_path(self.data, current)
         mtime = path.stat().st_mtime_ns
         self.archive(first)
@@ -446,6 +446,32 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue(old_path.is_file())
         self.assertFalse(other_path.exists())
         self.assertFalse(writer.note_path(self.data, other).exists())
+
+
+class ExistingCuratedTest(unittest.TestCase):
+    """``## Conflict`` is writer-owned, so it must not count as user curation."""
+
+    CONFLICT = "\n## Conflict\n\n- location: kept `New York, USA`, source says `—`\n\n"
+
+    def note(self, body: str, fm=None) -> Existing:
+        return Existing(
+            Path("data/2026/x.md"),
+            "https://sessionize.test/example-2027",
+            "developers.events",
+            "Example Summit 2027",
+            {"type": "cfp", "conflict": True} if fm is None else fm,
+            body,
+        )
+
+    def test_conflict_only_note_is_not_curated(self) -> None:
+        self.assertFalse(self.note(self.CONFLICT + "## Notes\n\n_Add notes here._\n").curated)
+
+    def test_conflict_section_does_not_mask_body_notes(self) -> None:
+        self.assertTrue(self.note(self.CONFLICT + "## Notes\n\nBring the demo.\n").curated)
+
+    def test_curated_fields_still_count_as_curation(self) -> None:
+        fm = {"type": "cfp", "conflict": True, "curated_fields": ["location"]}
+        self.assertTrue(self.note(self.CONFLICT + "## Notes\n\n", fm=fm).curated)
 
 
 if __name__ == "__main__":

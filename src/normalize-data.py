@@ -12,6 +12,7 @@ Usage (from the cfps/ folder):
 from __future__ import annotations
 
 import argparse
+import datetime
 import sys
 from pathlib import Path
 
@@ -30,8 +31,9 @@ def main() -> int:
         return 1
 
     changed = skipped = 0
+    today = datetime.date.today().isoformat()
     for p in sorted(data_dir.rglob("*.md")):
-        if normalize_file(p):
+        if normalize_file(p, today=today):
             changed += 1
         else:
             skipped += 1

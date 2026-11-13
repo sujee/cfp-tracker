@@ -163,6 +163,14 @@ SOURCE_SCALAR_FIELDS = (
 # replaced on update.
 LIST_FIELDS = ("topics", "benefits", "languages")
 
+# Fields a note can mark as user-curated with ``curated_fields: [location]``.
+# They do not drive the note path, so keeping the note's value cannot move the
+# note. ``event_name``/``event_date``/``cfp_close`` still define identity and
+# the year folder, so they remain source-owned even when they appear there.
+CONFLICT_FIELDS = ("location", "country", "event_url", "cfp_url")
+CONFLICT_HEADING = "## Conflict"
+_PLACEHOLDER_LOCATIONS = {"", "—", "-"}
+
 # Lower index = higher priority. Several conferences appear in more than one
 # feed and map to the same slug; the lower-priority source must not overwrite the
 # note a higher-priority one already owns (they disagree on location/country/source).
@@ -327,17 +335,21 @@ KNOWN_FM_KEYS = {
     "shortlist",
     "dismissed",
     "submissions",
-    # Pipeline timestamps. ``created`` is the note's first-seen date, set once
-    # and kept; ``updated`` is bumped to the run date whenever the pipeline
-    # rewrites the note because its source data changed. They are intentionally
-    # NOT part of ``_source_props_match``: comparing them against today would
-    # force a rewrite of every note on every run, so they are only checked for
-    # validity (a missing/garbled stamp back-fills on the next refresh).
+    # Pipeline timestamps. ``created`` is the note's first-seen timestamp, set
+    # once and kept; ``updated`` is bumped to the run timestamp whenever the
+    # pipeline rewrites the note because its source data changed. They are
+    # intentionally NOT part of ``_source_props_match``: comparing them against
+    # now would force a rewrite of every note on every run, so they are only
+    # checked for validity (a missing/garbled stamp back-fills on the next
+    # refresh).
     "created",
     "updated",
     # Relative paths whose curated state already moved into this note. This
     # lineage prevents an unarchived predecessor from being merged repeatedly.
     "replaces",
+    # Computed conflict flag. The ``## Conflict`` body section carries the
+    # field names and both values, so no separate frontmatter list is written.
+    "conflict",
     # Legacy keys are consumed instead of preserved as user metadata. A migrated
     # note must not keep a stale key next to its replacement. Frontmatter notes
     # move into the body during a rewrite.
@@ -345,6 +357,10 @@ KNOWN_FM_KEYS = {
     "name",
     "submission",
     "conf_date",
+    # Superseded by the ``## Conflict`` section. Kept here so an existing note
+    # drops the property on its next rewrite instead of preserving it as custom
+    # metadata.
+    "conflict_fields",
 }
 
 # One summary line per source; parsed by ``process-all.py`` for the run summary.
@@ -393,11 +409,11 @@ def _is_plain_safe(s: str, flow: bool = False) -> bool:
     return True
 
 
-# ISO dates are deliberately left unquoted: PyYAML reads them as
-# ``datetime.date`` and Obsidian maps the unquoted form to its date property
-# type, which ``event_date``/``cfp_close``/``created``/``updated`` rely on.
-# ``_as_str`` turns them back into ``YYYY-MM-DD`` on read, so the round-trip is
-# lossless.
+# ISO dates and timestamps are deliberately left unquoted: PyYAML reads them
+# as ``datetime.date`` / ``datetime.datetime`` and Obsidian maps the unquoted
+# form to its date property type, which ``event_date``/``cfp_close`` rely on.
+# ``created``/``updated`` are timestamps. ``_as_str`` turns them back into
+# their ISO form on read, so the round-trip is lossless.
 
 
 def _yaml_reads_as_non_string(s: str, allow_date: bool = False) -> bool:
@@ -406,9 +422,9 @@ def _yaml_reads_as_non_string(s: str, allow_date: bool = False) -> bool:
     ``365``, ``2026``, ``1.0``, ``yes``/``on``, ``null`` and sexagesimals like
     ``1:30`` all resolve to int / float / bool / None, so they must be quoted or
     the value silently changes type — a topic ``365`` comes back from the note
-    as a number. Only date-typed note properties exempt ISO dates.
+    as a number. Only date-typed note properties exempt ISO dates and timestamps.
     """
-    if allow_date and _ISO_DATE_RE.fullmatch(s):
+    if allow_date and _valid_stamp(s):
         return False
     try:
         return not isinstance(yaml.safe_load(s), str)
@@ -487,22 +503,46 @@ def _as_bool(value) -> bool:
     return _as_str(value).strip().lower() in ("true", "yes", "on", "1")
 
 
-# The pipeline stamps ``created``/``updated`` as plain ISO dates; a stamp is
-# "valid" when it matches exactly that shape. The writer knows nothing about
-# what the source data was on those days, so the check is format-only.
+# The pipeline stamps ``created``/``updated`` as ISO timestamps. A stamp is
+# "valid" when it is a date or a timestamp. Existing notes may still carry the
+# older date-only form; ``_stamp_str`` upgrades it on the next rewrite.
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _valid_iso_date(value) -> bool:
-    """True when *value* is a non-empty ``YYYY-MM-DD`` stamp."""
-    return bool(_ISO_DATE_RE.fullmatch(_as_str(value)))
+def _valid_stamp(value) -> bool:
+    """True when *value* is a non-empty ISO date or timestamp."""
+    s = _as_str(value).strip()
+    if not s:
+        return False
+    try:
+        datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _stamp_str(value) -> str:
+    """Return a timestamp string, upgrading a legacy date-only stamp to midnight."""
+    s = _as_str(value).strip()
+    if _ISO_DATE_RE.fullmatch(s):
+        return f"{s}T00:00:00"
+    return s
 
 
 def _today_str(today=None) -> str:
-    """Today's ISO date; *today* (a ``YYYY-MM-DD`` string) overrides for tests."""
+    """Current local timestamp; a ``--today`` value overrides for tests.
+
+    A date-only override becomes midnight (``YYYY-MM-DDT00:00:00``). A value
+    that already carries a time is used unchanged.
+    """
+    if isinstance(today, datetime.datetime):
+        return today.replace(microsecond=0).isoformat()
+    if isinstance(today, datetime.date):
+        return f"{today.isoformat()}T00:00:00"
     if today:
-        return str(today)
-    return datetime.date.today().isoformat()
+        s = str(today)
+        return s if "T" in s else f"{s}T00:00:00"
+    return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
 
 
 def _read_submissions(fm: dict) -> list:
@@ -541,6 +581,43 @@ def _body_and_legacy_notes(fm: dict, body: str) -> str:
     if legacy and legacy != body_notes:
         return "\n\n".join(part for part in (body_notes, legacy) if part)
     return body_notes or legacy
+
+
+def _curated_fields(fm: dict) -> set[str]:
+    """Field names the note marks as user-curated (case-insensitive)."""
+    return {name.casefold() for name in _as_list(fm.get("curated_fields")) if name.strip()}
+
+
+def _conflict_section(conflicts) -> str:
+    """Render the writer-owned ``## Conflict`` body section."""
+    if not conflicts:
+        return ""
+    lines = [CONFLICT_HEADING, ""]
+    for field, kept, source in conflicts:
+        lines.append(f"- {field}: kept `{kept}`, source says `{source}`")
+    return "\n".join(lines)
+
+
+def _split_conflict_section(notes: str) -> tuple[str, str]:
+    """Split notes into user notes and the writer-owned ``## Conflict`` section."""
+    text = (notes or "").strip()
+    if not text:
+        return "", ""
+    kept: list[str] = []
+    conflict: list[str] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if lines[i].strip().casefold() == CONFLICT_HEADING.casefold():
+            conflict.append(lines[i])
+            i += 1
+            while i < len(lines) and not lines[i].startswith("## "):
+                conflict.append(lines[i])
+                i += 1
+            continue
+        kept.append(lines[i])
+        i += 1
+    return _extract_body_notes("\n".join(kept).strip()), "\n".join(conflict).strip()
 
 
 def parse_start_date(raw: str) -> str:
@@ -659,6 +736,7 @@ def _render(
     updated: str,
     extras: list[str] | None = None,
     replaces: list[str] | None = None,
+    conflict_text: str = "",
 ) -> str:
     fm = [
         "---",
@@ -688,15 +766,20 @@ def _render(
         f"shortlist: {shortlist}",
         f"dismissed: {dismissed}",
         f"submissions: {_yaml_list(submissions)}",
-        f"created: {_yaml_date(created)}",
-        f"updated: {_yaml_date(updated)}",
+        f"created: {_yaml_date(_stamp_str(created))}",
+        f"updated: {_yaml_date(_stamp_str(updated))}",
     ]
     if replaces:
         fm.append(f"replaces: {_yaml_list(replaces)}")
+    if conflict_text:
+        # The ``## Conflict`` section names the fields and both values, so the
+        # flag is all the frontmatter needs.
+        fm.append("conflict: true")
     fm.extend(extras or [])  # user metadata, preserved verbatim
+    fm += ["---", ""]
+    if conflict_text:
+        fm += [conflict_text, ""]
     fm += [
-        "---",
-        "",
         NOTES_HEADING,
         "",
         notes if notes else NOTES_PLACEHOLDER,
@@ -973,19 +1056,34 @@ def upsert(
             ):
                 return "skipped"
 
-    # A source that does not know a location must not clobber one already
-    # curated on the note: ``—`` / empty means "unknown", not a real value.
-    # Preserve the existing location in that case so a refresh cannot erase
-    # hand-entered venue data (and the no-op short-circuit below still fires).
-    _PLACEHOLDER_LOCATIONS = {"", "—", "-"}
-    incoming_location = _as_str(row.get("location")).strip()
-    existing_location = _as_str(fm.get("location")).strip()
-    if (
-        incoming_location in _PLACEHOLDER_LOCATIONS
-        and existing_location
-        and existing_location not in _PLACEHOLDER_LOCATIONS
-    ):
-        row = {**row, "location": existing_location}
+    # Resolve curated fields. A source value that differs from a user-curated
+    # field is a conflict: keep the note's value, record it, and let the render
+    # step set ``conflict: true`` and the ``## Conflict`` section. A blank
+    # location also counts as a conflict even without ``curated_fields``,
+    # because an unknown value must not erase a real venue.
+    curated = _curated_fields(fm)
+    conflicts = []
+    for field in CONFLICT_FIELDS:
+        existing_value = _as_str(fm.get(field)).strip()
+        incoming_value = _as_str(row.get(field)).strip()
+        if not existing_value or incoming_value == existing_value:
+            continue
+        if field in curated or (
+            field == "location"
+            and incoming_value in _PLACEHOLDER_LOCATIONS
+            and existing_value not in _PLACEHOLDER_LOCATIONS
+        ):
+            conflicts.append((field, existing_value, incoming_value))
+            row = {**row, field: existing_value}
+
+    conflict_text = _conflict_section(conflicts)
+    notes, existing_conflict_text = _split_conflict_section(
+        _body_and_legacy_notes(fm, body)
+    )
+    conflict_changed = (
+        bool(conflicts) != _as_bool(fm.get("conflict"))
+        or conflict_text != existing_conflict_text
+    )
 
     # Topics and languages accumulate across refreshes instead of being
     # replaced by the current source row. Merge before comparing so an
@@ -1002,12 +1100,13 @@ def upsert(
     props_match = _source_props_match(fm, row)
     if (
         props_match
+        and not conflict_changed
         and previous_path == path
         and "name" not in fm
         and event_type_set
         and "dismissed" in fm
-        and _valid_iso_date(fm.get("created"))
-        and _valid_iso_date(fm.get("updated"))
+        and _valid_stamp(fm.get("created"))
+        and _valid_stamp(fm.get("updated"))
         and path.relative_to(data_dir).as_posix() not in _as_list(fm.get("replaces"))
     ):
         return "unchanged"
@@ -1023,20 +1122,27 @@ def upsert(
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
     dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
-    notes = _body_and_legacy_notes(fm, body)
     extras = _extra_frontmatter_lines(existing)
+
+    if conflicts and conflict_changed:
+        for field, kept, source_value in conflicts:
+            print(
+                f"cfp-writer: conflict: {path}: {field} kept {kept!r}, "
+                f"source says {source_value!r}",
+                file=sys.stderr,
+            )
 
     today_iso = _today_str(today)
     created = _as_str(fm.get("created"))
     updated = _as_str(fm.get("updated"))
-    if not _valid_iso_date(created):
+    if not _valid_stamp(created):
         # Mirror an existing ``updated`` so a back-fill never dates ``created``
         # after ``updated``; a note with neither stamp starts both at today.
-        created = updated if _valid_iso_date(updated) else today_iso
-    if not props_match:
-        # A real source change is an update of the note: advance ``updated``.
+        created = updated if _valid_stamp(updated) else today_iso
+    if not props_match or conflict_changed:
+        # A real source or conflict change is an update of the note.
         updated = today_iso
-    elif not _valid_iso_date(updated):
+    elif not _valid_stamp(updated):
         # Stamp back-fill only, not a data update: an existing note's
         # ``updated`` starts equal to its ``created``.
         updated = created
@@ -1061,6 +1167,7 @@ def upsert(
             updated,
             extras,
             replaces,
+            conflict_text=conflict_text,
         ),
     )
     if key and deduplicate:
@@ -1194,7 +1301,7 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
     shortlist = _as_bool(fm.get("shortlist"))
     dismissed = _as_bool(fm.get("dismissed"))
     submissions = _read_submissions(fm)
-    notes = _body_and_legacy_notes(fm, body)
+    notes, conflict_text = _split_conflict_section(_body_and_legacy_notes(fm, body))
     extras = {key: value for key, value in fm.items() if key not in KNOWN_FM_KEYS}
     created = _as_str(fm.get("created"))
     updated = _as_str(fm.get("updated"))
@@ -1230,15 +1337,17 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
         shortlist = shortlist or _as_bool(predecessor_fm.get("shortlist"))
         dismissed = dismissed or _as_bool(predecessor_fm.get("dismissed"))
         submissions = _merge_list(submissions, _read_submissions(predecessor_fm))
-        previous_notes = _body_and_legacy_notes(predecessor_fm, predecessor_body)
+        previous_notes, _previous_conflict = _split_conflict_section(
+            _body_and_legacy_notes(predecessor_fm, predecessor_body)
+        )
         if previous_notes and previous_notes not in notes:
             notes = "\n\n".join(part for part in (notes, previous_notes) if part)
         for key, value in predecessor_fm.items():
             if key not in KNOWN_FM_KEYS:
                 extras.setdefault(key, value)
         previous_created = _as_str(predecessor_fm.get("created"))
-        if _valid_iso_date(previous_created):
-            created = min(created, previous_created) if _valid_iso_date(created) else previous_created
+        if _valid_stamp(previous_created):
+            created = min(created, previous_created) if _valid_stamp(created) else previous_created
 
     replaces = [
         rel for rel in replaces if rel != path.relative_to(data_dir).as_posix()
@@ -1256,7 +1365,7 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
     )
     if current == original:
         return "unchanged"
-    if not _valid_iso_date(updated):
+    if not _valid_stamp(updated):
         updated = created
     extra_lines = []
     if extras:
@@ -1279,6 +1388,7 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
             updated,
             extra_lines,
             replaces,
+            conflict_text=conflict_text,
         ),
     )
 
@@ -1307,13 +1417,13 @@ def normalize_file(path: Path, today=None) -> bool:
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
     dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
-    notes = _body_and_legacy_notes(fm, body)
+    notes, conflict_text = _split_conflict_section(_body_and_legacy_notes(fm, body))
     extras = _extra_frontmatter_lines(text)
     created = _as_str(fm.get("created"))
     updated = _as_str(fm.get("updated"))
-    if not _valid_iso_date(created):
-        created = updated if _valid_iso_date(updated) else _today_str(today)
-    if not _valid_iso_date(updated):
+    if not _valid_stamp(created):
+        created = updated if _valid_stamp(updated) else _today_str(today)
+    if not _valid_stamp(updated):
         # A shape pass is not a data update: back-filled stamps stay equal.
         updated = created
     _write_if_changed(
@@ -1328,6 +1438,7 @@ def normalize_file(path: Path, today=None) -> bool:
             updated,
             extras,
             _as_list(fm.get("replaces")),
+            conflict_text=conflict_text,
         ),
     )
     return True
