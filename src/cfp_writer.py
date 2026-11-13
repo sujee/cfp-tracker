@@ -169,10 +169,12 @@ SOURCE_PRIORITY = {
     "manual": 0,
     "developers.events": 1,
     "cfp.ninja": 2,
-    "confs.tech": 3,
+    # PythonDeadlin.es is a maintained, speaking-focused YAML feed.
+    "python-deadlines": 3,
+    "confs.tech": 4,
     # Derived aggregators fill gaps without overwriting richer sources.
-    "adato-tracker": 4,
-    "open-tech-cfps": 5,
+    "adato-tracker": 5,
+    "open-tech-cfps": 6,
 }
 
 

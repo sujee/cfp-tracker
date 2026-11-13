@@ -110,6 +110,7 @@ Everything an agent needs is here, deliberately:
 - `src/process-developer-events.py` — developers.events fetcher (was `src/build-open-cfps.py`; that name remains as a shim).
 - `src/process-cfp-ninja.py` — cfp.ninja fetcher (public `api/v0/events`).
 - `src/process-confs-tech.py` — confs.tech fetcher.
+- `src/process-python-deadlines.py` — PythonDeadlin.es fetcher (maintained Python speaking CFPs).
 - `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
@@ -332,7 +333,7 @@ currently change nothing the base reads. Kept for reference / if the report retu
 - **Overlapping feeds: a higher-priority source wins a shared note.** Some conferences appear in
   both developers.events and confs.tech (or cfp.ninja) and normalize to the same slug. Without a
   rule the later writer would overwrite the other. `cfp_writer.SOURCE_PRIORITY`
-  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`) makes a lower-priority source skip a
+  (`manual` > `developers.events` > `cfp.ninja` > `python-deadlines` > `confs.tech` > `adato-tracker` > `open-tech-cfps`) makes a lower-priority source skip a
   note a higher-priority one already owns, so a no-op refresh reports 0 updated.
 - **Two feeds can name one CFP differently, so it slugifies twice** (`SCaLE` from confs.tech vs
   `Southern California Linux Expo - SCaLE 24x` from developers.events — same `cfp_url`, two

@@ -51,6 +51,7 @@ def included_event_types() -> set[str]:
 SOURCE_STEPS = {
     "developers.events": ("process-developer-events.py", "dev"),
     "cfp.ninja": ("process-cfp-ninja.py", "ninja"),
+    "python-deadlines": ("process-python-deadlines.py", "pydeadlines"),
     "confs.tech": ("process-confs-tech.py", "confs"),
     "adato-tracker": ("process-adato-tracker.py", "adato"),
     "open-tech-cfps": ("process-open-tech-cfps.py", "opentech"),
