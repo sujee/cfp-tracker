@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Rewrite the per-CFP notes to the current frontmatter shape, in place.
 
-Drops any frontmatter ``notes`` (notes live only in the body), re-quotes
-every value safely, back-fills a missing ``dismissed`` flag with ``false``,
-and back-fills missing ``created``/``updated`` stamps with today (stamps
-already present are preserved). Idempotent: running it
-twice changes nothing the second time. Safe to run on a vault that already
-matches the current format.
+Moves legacy frontmatter ``notes`` into the body and emits current note fields.
+Only existing ``type: cfp`` notes are processed. Other Markdown files stay
+unchanged. Missing flags and timestamps are back-filled without changing valid
+stamps. Running the command twice leaves notes unchanged after the first pass.
 
 Usage (from the cfps/ folder):
     python3 src/normalize-data.py [--data data]
@@ -37,7 +35,7 @@ def main() -> int:
             changed += 1
         else:
             skipped += 1
-            print(f"skipped (no frontmatter): {p}", file=sys.stderr)
+            print(f"skipped (not an existing CFP note): {p}", file=sys.stderr)
 
     print(f"normalized {changed} notes ({skipped} skipped) in {data_dir}")
     return 0

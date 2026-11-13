@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import io
 import json
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "cfp-ninja"
@@ -53,10 +57,92 @@ class TestParseDate(unittest.TestCase):
         self.assertIsNone(pcn._parse_date("sometime"))
 
 
+class TestFetchCache(unittest.TestCase):
+    def test_online_fetch_refreshes_an_existing_cache_atomically(self) -> None:
+        live = {"data": [{"name": "Live"}], "pagination": {"total_pages": 1}}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "page.json"
+            dest.write_text('{"data": [{"name": "Stale"}]}', encoding="utf-8")
+            response = io.BytesIO(json.dumps(live).encode("utf-8"))
+            with mock.patch("http_cache.urllib.request.urlopen", return_value=response) as fetch:
+                result = pcn._fetch_page("https://example.test", cache, "page.json")
+            self.assertEqual(result, live)
+            self.assertEqual(json.loads(dest.read_text(encoding="utf-8")), live)
+            self.assertEqual(list(cache.glob("*.tmp")), [])
+            fetch.assert_called_once()
+
+    def test_fetch_error_uses_and_reports_valid_cached_fallback(self) -> None:
+        cached = {"data": [{"name": "Cached"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "page.json").write_text(json.dumps(cached), encoding="utf-8")
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")),
+                redirect_stderr(io.StringIO()) as errors,
+            ):
+                result = pcn._fetch_page("https://example.test", cache, "page.json")
+            self.assertEqual(result, cached)
+            self.assertIn("cache fallback", errors.getvalue())
+
+    def test_invalid_live_pagination_preserves_the_cached_page(self) -> None:
+        cached = {"data": [{"name": "Cached"}], "pagination": {"total_pages": 1}}
+        cached_text = json.dumps(cached, indent=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "page.json"
+            dest.write_text(cached_text, encoding="utf-8")
+            live = {"data": [], "pagination": {"total_pages": "invalid"}}
+            response = io.BytesIO(json.dumps(live).encode("utf-8"))
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", return_value=response),
+                redirect_stderr(io.StringIO()),
+            ):
+                result = pcn._fetch_page("https://example.test", cache, "page.json")
+            self.assertEqual(result, cached)
+            self.assertEqual(dest.read_text(encoding="utf-8"), cached_text)
+
+    def test_offline_rejects_non_object_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "page.json").write_text('{"data": ["invalid"]}', encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                with self.assertRaisesRegex(ValueError, "every event"):
+                    pcn._fetch_page(
+                        "https://example.test", cache, "page.json", offline=True
+                    )
+            fetch.assert_not_called()
+
+    def test_offline_reads_cache_without_touching_the_network(self) -> None:
+        cached = {"data": [{"name": "Cached"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "page.json").write_text(json.dumps(cached), encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                result = pcn._fetch_page(
+                    "https://example.test", cache, "page.json", offline=True
+                )
+            self.assertEqual(result, cached)
+            fetch.assert_not_called()
+
+    def test_malformed_cache_is_not_a_silent_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "page.json").write_text("not json", encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")):
+                with self.assertRaisesRegex(ValueError, "cache fallback is unavailable"):
+                    pcn._fetch_page("https://example.test", cache, "page.json")
+
+    def test_malformed_event_envelope_fails(self) -> None:
+        with mock.patch.object(pcn, "_fetch_page", return_value={"data": None}):
+            with self.assertRaisesRegex(ValueError, "data list"):
+                pcn.fetch_events()
+
+
 class TestCollectRows(unittest.TestCase):
     def setUp(self) -> None:
         self._orig = pcn.fetch_events
-        pcn.fetch_events = lambda cache_path=None: EVENTS
+        pcn.fetch_events = lambda cache_path=None, offline=False: EVENTS
 
     def tearDown(self) -> None:
         pcn.fetch_events = self._orig
@@ -103,7 +189,7 @@ class TestCollectRows(unittest.TestCase):
         single = [r for r in rows if r["name"] == "Conf42 Chaos Engineering 2027"]
         self.assertEqual(len(single), 1)
 
-        pcn.fetch_events = lambda cache_path=None: EVENTS + [dup]
+        pcn.fetch_events = lambda cache_path=None, offline=False: EVENTS + [dup]
         again = pcn.collect_rows(CUTOFF, TODAY, None)
         self.assertEqual(len([r for r in again if r["name"] == "Conf42 Chaos Engineering 2027"]), 1)
 
@@ -122,7 +208,7 @@ class TestCollectRows(unittest.TestCase):
             "hotel_covered": True,
             "honorarium_provided": True,
         }
-        pcn.fetch_events = lambda cache_path=None: [record]
+        pcn.fetch_events = lambda cache_path=None, offline=False: [record]
         row = pcn.collect_rows(CUTOFF, TODAY, None)[0]
         self.assertEqual(row["benefits"], ["travel", "hotel", "honorarium"])
 

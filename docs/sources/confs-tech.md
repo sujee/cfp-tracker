@@ -2,20 +2,37 @@
 
 - Status: Implemented
 - Official/source URL(s): [confs.tech](https://confs.tech/), [`tech-conferences/conference-data`](https://github.com/tech-conferences/conference-data)
-- Interface: GitHub directory listings under [`conferences/<year>/`](https://api.github.com/repos/tech-conferences/conference-data/contents/conferences) and raw `conferences/<year>/<topic>.json`; adapter [`src/process-confs-tech.py`](../../src/process-confs-tech.py)
-- Verification: 2026-11-11
+- Interface: GitHub directory listings and `conferences/<year>/<topic>.json`
+- Adapter: [`src/process-confs-tech.py`](../../src/process-confs-tech.py)
+- Verification: 2026-11-12
 
 ## Data and access
 
-The community repository is MIT-licensed and publicly readable without application credentials. Event rows can contain `name`, `url`, `cfpUrl`, `cfpEndDate`, `startDate`, `city`, and `country`. The adapter discovers this year and next year through the GitHub contents API, then fetches raw JSON. Readable listing/topic caches have no expiration; per-listing or per-file failures are logged and skipped.
+The community repository is MIT-licensed and publicly readable without application credentials.
+The adapter reads this year and next year through the GitHub contents API. It fetches selected topic
+files through the shared online-first cache. `--offline` requires cached responses.
 
-## Caveats
+A listing or topic-file failure aborts the source. The full pipeline then stops before note writes.
+Malformed listings, malformed topic data, and non-object events also abort the source.
 
-There is **no `ai` topic file** in the verified source tree. The current configuration requests `devops`, `opensource`, `python`, and `ai`, while `general` is always included; the nonexistent `ai` selection yields nothing itself, so AI events must arrive through `general` or another real topic. Setting `CONFS_TECH_TOPICS` empty selects every discovered topic. Dates must parse as supported ISO values. Source-level dedupe is normalized **name only** across both years and selected topics, so distinct editions or revised deadlines with the same name can collapse.
+## Selection and caveats
+
+There is **no `ai` topic file** in the verified source tree. The current personal configuration
+requests `devops`, `opensource`, `python`, and `ai`. `general` is always included. An empty
+`CONFS_TECH_TOPICS` collection selects every discovered topic. Name-based ignore filters apply.
+
+`cfpEndDate` must parse as a supported ISO value. Selection compares it with the shared cutoff.
+Exact export duplicates collapse. Distinct deadline, event date, location, and CFP URL values remain
+available for reconciliation.
 
 ## Integration guidance
 
-Filter `cfpEndDate` inclusively against the 30-day-default cutoff. Map `url` and `cfpUrl` to event and CFP URLs, parse `startDate`, and join nonempty city/country for display location. Despite upstream country and topic-file membership, the current normalized row deliberately writes `country: ""` and `topics: []`; the writer does not infer country from location. Ignore-term filtering uses only the event name. This source ranks below cfp.ninja and above adato-tracker. Its CLI also refreshes the reference-only topic list in `src/discovered-topics.txt` without rewriting Python source.
+`url` and `cfpUrl` supply event and submission URLs. `startDate` supplies the event start.
+City and country supply a display location. Structured country and online values populate `country`.
+A specialized topic-file name becomes a topic. Rows from `general.json` do not invent a topic.
+
+This source ranks below cfp.ninja and above adato-tracker among current rows. Its CLI writes
+`src/discovered-topics.txt` only when `--write-discovered-topics` is present.
 
 ## Evidence
 

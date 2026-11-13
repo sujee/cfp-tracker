@@ -123,4 +123,16 @@ def local_overrides(path: Path | str | None = None) -> dict:
     return values
 
 
+def validate_filter_settings() -> None:
+    """Reject collection settings that could silently filter out a whole source."""
+    for name in ("IGNORE_NAMES", "IGNORE_TOPICS", "CONFS_TECH_TOPICS"):
+        value = globals()[name]
+        if isinstance(value, str) or not isinstance(value, (list, tuple, set, frozenset)):
+            raise ValueError(f"config.{name} must be a collection of nonempty strings")
+        for item in value:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError(f"config.{name} must contain nonempty strings")
+
+
 globals().update(local_overrides())
+validate_filter_settings()

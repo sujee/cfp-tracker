@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import json
 import re
 import sys
-import urllib.request
 from pathlib import Path
+
+from http_cache import fetch_json
 
 API_BASE = "https://1kevgriff.github.io/OpenTechCFPs/api"
 SOURCE = "open-tech-cfps"
@@ -30,22 +30,30 @@ import config as _cfg
 _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
-def _fetch_json(url: str, cache_path: Path | None = None, cache_key: str | None = None):
-    dest = cache_path / cache_key if (cache_path and cache_key) else None
-    if dest is not None and dest.is_file():
-        try:
-            return json.loads(dest.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "cfp-merge/1.0", "Accept": "application/json"}
+def _validate_feed(data, kind: str = "response") -> bool:
+    if not isinstance(data, dict) or not isinstance(data.get("cfps"), list):
+        raise ValueError(f"Open Tech CFPs {kind}: expected an object with a cfps list")
+    if not all(isinstance(event, dict) for event in data["cfps"]):
+        raise ValueError(f"Open Tech CFPs {kind}: expected every CFP to be an object")
+    return True
+
+
+def _fetch_json(
+    url: str,
+    cache_path: Path | None = None,
+    cache_key: str | None = None,
+    offline: bool = False,
+):
+    """Fetch JSON through the shared online-first cache."""
+    kind = url.rsplit("/", 1)[-1].removesuffix(".json")
+    return fetch_json(
+        url,
+        cache_path,
+        cache_key,
+        offline=offline,
+        source=SOURCE,
+        validator=lambda data: _validate_feed(data, kind),
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.load(resp)
-    if dest is not None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(json.dumps(data), encoding="utf-8")
-    return data
 
 
 def _text(value) -> str:
@@ -97,22 +105,23 @@ def benefits_of(event: dict) -> list[str]:
     return benefits
 
 
-def fetch_records(cache_path: Path | None = None) -> list[dict]:
+def fetch_records(cache_path: Path | None = None, offline: bool = False) -> list[dict]:
     records = []
     for kind in ("open", "closed"):
         data = _fetch_json(
-            f"{API_BASE}/{kind}.json", cache_path, f"open-tech-cfps-{kind}.json"
+            f"{API_BASE}/{kind}.json",
+            cache_path,
+            f"open-tech-cfps-{kind}.json",
+            offline=offline,
         )
-        if not isinstance(data, dict) or not isinstance(data.get("cfps"), list):
-            raise ValueError(f"Open Tech CFPs {kind}: expected an object with a cfps list")
-        for event in data["cfps"]:
-            if not isinstance(event, dict):
-                raise ValueError(f"Open Tech CFPs {kind}: expected every CFP to be an object")
-            records.append(event)
+        _validate_feed(data, kind)
+        records.extend(data["cfps"])
     return records
 
 
-def collect_rows(cutoff: _dt.date, cache_path: Path | None = None) -> list[dict]:
+def collect_rows(
+    cutoff: _dt.date, cache_path: Path | None = None, offline: bool = False
+) -> list[dict]:
     """Return current and recently closed CFPs with an actionable CFP URL."""
     cutoff_utc = _dt.datetime.combine(cutoff, _dt.time.min, tzinfo=_dt.timezone.utc)
     rows = []
@@ -122,7 +131,7 @@ def collect_rows(cutoff: _dt.date, cache_path: Path | None = None) -> list[dict]
     # The newest record wins a duplicate conference. This matters when a
     # Sessionize page is renamed or superseded but keeps the same name/deadline.
     records = sorted(
-        fetch_records(cache_path),
+        fetch_records(cache_path, offline=offline),
         key=lambda event: _parse_utc(event.get("updated"))
         or _dt.datetime.min.replace(tzinfo=_dt.timezone.utc),
         reverse=True,
@@ -196,23 +205,31 @@ def main() -> int:
         "--cache", default=str(Path(__file__).resolve().parent.parent / "cache")
     )
     ap.add_argument("--manifest", default=None)
+    ap.add_argument("--superseded-manifest", default=None)
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached responses; do not access the network.",
+    )
     args = ap.parse_args()
 
     today = _dt.date.fromisoformat(args.today)
     cutoff = today - _dt.timedelta(days=30 * max(1, args.months_back))
-    rows = collect_rows(cutoff, Path(args.cache))
+    rows = [
+        {**row, "source": SOURCE}
+        for row in collect_rows(cutoff, Path(args.cache), offline=args.offline)
+    ]
 
     data_dir = Path(args.out).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
-    from cfp_writer import upsert_counted, summary_line, write_manifest
+    from cfp_writer import emit_rows, summary_line
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for row in rows:
-        upsert_counted(data_dir, {**row, "source": SOURCE}, counts, produced)
-
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
 
     print(
         summary_line(

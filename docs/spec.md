@@ -1,11 +1,14 @@
 # CFP Tracker — Software Specification
 
-**Status:** Reverse-engineered specification of the current implementation  
-**Code snapshot inspected:** 2026-11-09 (`26eefb8`)  
+- **Status:** Historical specification of an earlier implementation
+- **Code snapshot inspected:** 2026-11-09 (`26eefb8`)
+- **Current procedures:** [`INSTRUCTIONS.md`](../INSTRUCTIONS.md)
+- **Current data contracts:** [`AGENTS.md`](../AGENTS.md)
 **Primary implementation:** `src/`  
 **Primary outputs:** `data/**/*.md`, `archived/**/*.md`, and the Obsidian views in `cfps.base` / `cfps-dashboard.md`
 
-This document specifies what the code currently does. It is not a redesign proposal. Existing inconsistencies and risky edge cases are recorded explicitly in [Current limitations and implementation quirks](#17-current-limitations-and-implementation-quirks), rather than being presented as desirable behavior.
+This document specifies the code at the snapshot above. It does not describe later reconciliation,
+cache, watchlist, or archive changes. Use the current procedures and data contracts for new work.
 
 ## 1. Purpose and scope
 

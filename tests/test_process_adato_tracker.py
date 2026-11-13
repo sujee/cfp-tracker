@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import io
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "adato-tracker"
@@ -56,6 +60,78 @@ class TestParseDate(unittest.TestCase):
         self.assertIsNone(pat._parse_date("2026-11-06T00:00:00"))
 
 
+class TestFetchCache(unittest.TestCase):
+    def test_online_fetch_refreshes_an_existing_cache_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / pat.CACHE_NAME
+            dest.write_text("stale", encoding="utf-8")
+            response = io.BytesIO(PAGE.encode("utf-8"))
+            with mock.patch("http_cache.urllib.request.urlopen", return_value=response) as fetch:
+                result = pat._fetch_page(cache)
+            self.assertEqual(result, PAGE)
+            self.assertEqual(dest.read_text(encoding="utf-8"), PAGE)
+            self.assertEqual(list(cache.glob("*.tmp")), [])
+            fetch.assert_called_once()
+
+    def test_fetch_error_uses_and_reports_valid_cached_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / pat.CACHE_NAME).write_text(PAGE, encoding="utf-8")
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")),
+                redirect_stderr(io.StringIO()) as errors,
+            ):
+                result = pat._fetch_page(cache)
+            self.assertEqual(result, PAGE)
+            self.assertIn("cache fallback", errors.getvalue())
+
+    def test_schema_invalid_live_html_preserves_the_cached_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / pat.CACHE_NAME
+            dest.write_text(PAGE, encoding="utf-8")
+            response = io.BytesIO(b"<html><body>temporarily unavailable</body></html>")
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", return_value=response),
+                redirect_stderr(io.StringIO()),
+            ):
+                result = pat._fetch_page(cache)
+            self.assertEqual(result, PAGE)
+            self.assertEqual(dest.read_text(encoding="utf-8"), PAGE)
+
+    def test_offline_rejects_a_changed_nonempty_table_row(self) -> None:
+        changed = (
+            '<table class="tablesorter"><tbody><tr>'
+            "<td>Changed</td><td>Structure</td><td>Row</td>"
+            "</tr></tbody></table>"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / pat.CACHE_NAME).write_text(changed, encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                with self.assertRaisesRegex(ValueError, "expected 8 columns"):
+                    pat._fetch_page(cache, offline=True)
+            fetch.assert_not_called()
+
+    def test_offline_reads_cache_without_touching_the_network(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / pat.CACHE_NAME).write_text(PAGE, encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                result = pat._fetch_page(cache, offline=True)
+            self.assertEqual(result, PAGE)
+            fetch.assert_not_called()
+
+    def test_malformed_cache_is_not_a_silent_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / pat.CACHE_NAME).write_bytes(b"\xff")
+            with mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")):
+                with self.assertRaisesRegex(ValueError, "cache fallback is unavailable"):
+                    pat._fetch_page(cache)
+
+
 class TestTableParser(unittest.TestCase):
     def test_only_the_tablesorter_table_is_read(self) -> None:
         html = (
@@ -74,12 +150,21 @@ class TestTableParser(unittest.TestCase):
         self.assertTrue(first[6][1].startswith("https://"))
         self.assertTrue(first[7][1].startswith("https://"))
 
+    def test_valid_empty_tablesorter_table_is_not_an_error(self) -> None:
+        html = '<table class="tablesorter"><thead></thead><tbody></tbody></table>'
+        self.assertEqual(pat._parse_rows(html), [])
+        self.assertTrue(pat._validate_page(html))
+
+    def test_missing_tablesorter_table_fails(self) -> None:
+        with self.assertRaisesRegex(ValueError, "tablesorter"):
+            pat._parse_rows('<table class="other"><tbody></tbody></table>')
+
 
 class TestCollectRows(unittest.TestCase):
     def setUp(self) -> None:
         self._orig = pat._fetch_page
         self._original_ignore = pat._IGNORE
-        pat._fetch_page = lambda cache_path=None: PAGE
+        pat._fetch_page = lambda cache_path=None, offline=False: PAGE
         # Fixture expectations must not depend on a developer's local config.
         pat._IGNORE = ["bitcoin", "mobile"]
 
@@ -131,7 +216,7 @@ class TestCollectRows(unittest.TestCase):
             '<td><a href="https://example.test/e">Link</a></td>'
             '<td><a href="https://example.test/cfp">Link</a></td></tr>'
         )
-        pat._fetch_page = lambda cache_path=None: (
+        pat._fetch_page = lambda cache_path=None, offline=False: (
             '<table class="tablesorter"><tbody>' + row + row + "</tbody></table>"
         )
         rows = pat.collect_rows(CUTOFF, TODAY, None)
@@ -146,6 +231,21 @@ class TestCollectRows(unittest.TestCase):
         self.assertEqual(row["topics"], [])
         self.assertNotIn("benefits", row)
         self.assertNotIn("languages", row)
+
+    def test_valid_empty_table_produces_no_rows(self) -> None:
+        pat._fetch_page = lambda cache_path=None, offline=False: (
+            '<table class="tablesorter"><thead></thead><tbody></tbody></table>'
+        )
+        self.assertEqual(pat.collect_rows(CUTOFF, TODAY, None), [])
+
+    def test_unexpected_nonempty_row_width_fails(self) -> None:
+        pat._fetch_page = lambda cache_path=None, offline=False: (
+            '<table class="tablesorter"><tbody><tr>'
+            "<td>Changed</td><td>Structure</td><td>Row</td>"
+            "</tr></tbody></table>"
+        )
+        with self.assertRaisesRegex(ValueError, "expected 8 columns"):
+            pat.collect_rows(CUTOFF, TODAY, None)
 
 
 if __name__ == "__main__":

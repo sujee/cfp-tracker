@@ -22,10 +22,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import json
 import re
 import sys
-import urllib.request
 from pathlib import Path
 
 API_URL = "https://cfp.ninja/api/v0/events"
@@ -34,39 +32,56 @@ CFP_PAGE = "https://cfp.ninja/e"  # public submission page: /e/<slug>
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as _cfg
+from http_cache import fetch_json
 
 _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
-def _fetch_page(url: str, cache_path: Path | None = None, cache_key: str | None = None):
-    """Fetch one JSON page, preferring the cache at ``cache_path/cache_key``."""
-    dest = cache_path / cache_key if (cache_path and cache_key) else None
-    if dest is not None and dest.is_file():
-        try:
-            return json.loads(dest.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "cfp-merge/1.0", "Accept": "application/json"}
+def _validate_event_page(data) -> int:
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ValueError("cfp.ninja: expected an object with a data list")
+    if not all(isinstance(event, dict) for event in data["data"]):
+        raise ValueError("cfp.ninja: expected every event to be an object")
+    pagination = data.get("pagination") or {}
+    if not isinstance(pagination, dict):
+        raise ValueError("cfp.ninja: expected pagination to be an object")
+    try:
+        total_pages = int(pagination.get("total_pages") or 1)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("cfp.ninja: invalid pagination.total_pages") from exc
+    if total_pages < 1:
+        raise ValueError("cfp.ninja: pagination.total_pages must be positive")
+    return total_pages
+
+
+def _fetch_page(
+    url: str,
+    cache_path: Path | None = None,
+    cache_key: str | None = None,
+    offline: bool = False,
+):
+    """Fetch JSON through the shared online-first cache."""
+    return fetch_json(
+        url,
+        cache_path,
+        cache_key,
+        offline=offline,
+        source="cfp.ninja",
+        validator=_validate_event_page,
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.load(resp)
-    if dest is not None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(json.dumps(data), encoding="utf-8")
-    return data
 
 
-def fetch_events(cache_path: Path | None = None) -> list[dict]:
+def fetch_events(cache_path: Path | None = None, offline: bool = False) -> list[dict]:
     """Every event across all pages of the public cfp.ninja API."""
     events: list[dict] = []
     page = 1
     while True:
         url = f"{API_URL}?per_page={PER_PAGE}&page={page}"
-        data = _fetch_page(url, cache_path, f"cfp-ninja-events-{page}.json")
-        events.extend(data.get("data") or [])
-        pagination = data.get("pagination") or {}
-        total_pages = int(pagination.get("total_pages") or 1)
+        data = _fetch_page(
+            url, cache_path, f"cfp-ninja-events-{page}.json", offline=offline
+        )
+        total_pages = _validate_event_page(data)
+        events.extend(data["data"])
         if page >= total_pages:
             break
         page += 1
@@ -95,7 +110,12 @@ def benefits_of(event: dict) -> list[str]:
     return out
 
 
-def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = None) -> list[dict]:
+def collect_rows(
+    cutoff: _dt.date,
+    today: _dt.date,
+    cache_path: Path | None = None,
+    offline: bool = False,
+) -> list[dict]:
     """One row per cfp.ninja event whose CFP deadline is on/after *cutoff*.
 
     Deduplication key is ``(normalized name, cfp_close)`` — the same conference
@@ -104,7 +124,7 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
     """
     rows: list[dict] = []
     seen = set()
-    for event in fetch_events(cache_path):
+    for event in fetch_events(cache_path, offline=offline):
         close = _parse_date(event.get("cfp_close_at"))
         if close is None or close < cutoff:
             continue
@@ -157,26 +177,33 @@ def main() -> int:
         default=str(Path(__file__).resolve().parent.parent / "cache"),
     )
     ap.add_argument("--manifest", default=None)
+    ap.add_argument("--superseded-manifest", default=None)
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached responses; do not access the network.",
+    )
     args = ap.parse_args()
 
     today = _dt.date.fromisoformat(args.today)
     cutoff = today - _dt.timedelta(days=30 * max(1, args.months_back))
 
-    rows = collect_rows(cutoff, today, Path(args.cache))
+    rows = [
+        {**row, "source": "cfp.ninja"}
+        for row in collect_rows(cutoff, today, Path(args.cache), offline=args.offline)
+    ]
 
     data_dir = Path(args.out).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from cfp_writer import upsert_counted, summary_line, write_manifest
+    from cfp_writer import emit_rows, summary_line
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for r in rows:
-        row = {**r, "source": "cfp.ninja"}
-        upsert_counted(data_dir, row, counts, produced)
-
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
 
     print(summary_line("cfp.ninja", len(rows), counts["new"], counts["updated"],
                        counts["unchanged"] + counts["skipped"]))

@@ -15,10 +15,14 @@ from __future__ import annotations
 import copy
 import datetime
 import importlib.util
+import io
 import json
 import sys
+import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 FIX = ROOT / "tests" / "fixtures" / "developers-events"
@@ -46,6 +50,40 @@ EXPECTED = {
     "AI & Copilot Summit 01.-02. Juni 2027",      # 2026-12-21, online
     "AI Context New York 2027",                   # 2027-01-04
 }
+
+
+class TestFetchValidation(unittest.TestCase):
+    def test_non_list_live_feed_preserves_the_cached_list(self) -> None:
+        cached = [{"conf": {"name": "Cached"}}]
+        cached_text = json.dumps(cached, indent=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "all-cfps.json"
+            dest.write_text(cached_text, encoding="utf-8")
+            response = io.BytesIO(b'{"message": "temporarily unavailable"}')
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", return_value=response),
+                redirect_stderr(io.StringIO()),
+            ):
+                result = pde.fetch_json(
+                    cache, "all-cfps.json", pde.SRC_URLS["all-cfps.json"]
+                )
+            self.assertEqual(result, cached)
+            self.assertEqual(dest.read_text(encoding="utf-8"), cached_text)
+
+    def test_offline_rejects_a_non_list_cached_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "all-events.json").write_text('{"message": "down"}', encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                with self.assertRaisesRegex(ValueError, "expected a JSON list"):
+                    pde.fetch_json(
+                        cache,
+                        "all-events.json",
+                        pde.SRC_URLS["all-events.json"],
+                        offline=True,
+                    )
+            fetch.assert_not_called()
 
 
 class TestBuildRows(unittest.TestCase):
@@ -102,15 +140,27 @@ class TestBuildRows(unittest.TestCase):
             "https://sessionize.com/ai-context-ny-co/",
         )
 
-    def test_durations_passed_through(self) -> None:
+    def test_row_contains_only_note_enrichment_fields(self) -> None:
+        dutch = self.by_name["Dutch AI Conference"]
         self.assertEqual(
-            self.by_name["ContainerDays & AI Context London 2027"]["durations"],
-            ["talk:15", "talk:30", "workshop:60"],
+            set(dutch),
+            {"name", "close", "dates", "loc", "country", "topics", "languages", "event_url", "cfp_url"},
         )
+        self.assertEqual(pde.event_date_start(dutch["dates"]), "2027-03-16")
+        self.assertEqual(dutch["loc"], "Amsterdam (Netherlands)")
 
-    def test_online_detection(self) -> None:
-        self.assertTrue(self.by_name["AI & Copilot Summit 01.-02. Juni 2027"]["online"])
-        self.assertFalse(self.by_name["DevFest 2026"]["online"])
+    def test_event_url_falls_back_to_cfp_conf_when_matched_event_lacks_one(self) -> None:
+        entry = copy.deepcopy(next(c for c in CFPS if c["link"] == "https://sessionize.com/dawn-conferences-2027/"))
+        event = copy.deepcopy(next(
+            e for e in EVENTS
+            if e["name"] == "Dutch AI Conference" and e["date"] == entry["conf"]["date"]
+        ))
+        event.pop("hyperlink")
+
+        row = pde.build_rows([entry], [event], CUTOFF)[0]
+
+        self.assertEqual(row["event_url"], entry["conf"]["hyperlink"])
+        self.assertEqual(row["topics"], ["ai", "data", "ml"])
 
 
 class TestSelectBestEvent(unittest.TestCase):
@@ -136,32 +186,20 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(pde.extract_country_from_location("Online"), "")
         self.assertEqual(pde.extract_country_from_location(None), "")
 
-    def test_country_flag(self) -> None:
-        self.assertEqual(pde.country_flag("USA"), "\U0001F1FA\U0001F1F8")
-        self.assertEqual(pde.country_flag("uk"), "\U0001F1EC\U0001F1E7")
-        self.assertEqual(pde.country_flag(""), "")
-        if pde._PYCOUNTRY_MAP:  # full country names need the optional pycountry
-            self.assertEqual(pde.country_flag("Netherlands"), "\U0001F1F3\U0001F1F1")
-
     def test_event_date_start(self) -> None:
         self.assertEqual(pde.event_date_start([1802908800000, 1802736000000]), "2027-02-16")
         self.assertEqual(pde.event_date_start([]), "TBA")
-
-    def test_format_event_dates(self) -> None:
-        self.assertTrue(pde.format_event_dates([1802736000000]).startswith("2027-02-16"))
-        self.assertEqual(pde.format_event_dates([]), "TBA")
 
     def test_compute_cutoff_rolling_days(self) -> None:
         today = datetime.date(2026, 11, 2)
         self.assertEqual(pde.compute_cutoff(today, months_back=1), datetime.date(2026, 10, 3))
         self.assertEqual(pde.compute_cutoff(today, days_back=7), datetime.date(2026, 10, 26))
 
-    def test_is_focus_row(self) -> None:
-        focus = {"ai", "agents"}
-        self.assertTrue(pde.is_focus_row({"topics": ["ai"], "name": "Some Meetup"}, focus))
-        self.assertTrue(pde.is_focus_row({"topics": [], "name": "AI Summit 2027"}, focus))
-        self.assertFalse(pde.is_focus_row({"topics": [], "name": "Python Meetup"}, focus))
-        self.assertFalse(pde.is_focus_row({"topics": ["ai"], "name": "x"}, set()))
+    def test_legacy_report_flags_remain_parseable(self) -> None:
+        args = pde.build_arg_parser().parse_args([
+            "--focus-tags", "ai", "--no-focus", "--no-frontmatter", "--no-backup"
+        ])
+        self.assertEqual(args.months_back, 1)
 
 
 if __name__ == "__main__":

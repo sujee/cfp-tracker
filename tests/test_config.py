@@ -66,6 +66,12 @@ class TestLocalOverrides(unittest.TestCase):
             with self.assertRaises(ZeroDivisionError):
                 config.local_overrides(path)
 
+    def test_example_configuration_has_no_personal_inputs_or_filters(self) -> None:
+        values = config.local_overrides(ROOT / "src" / "config_local.example.py")
+        self.assertEqual(values["MANUAL_INPUT_FILES"], [])
+        self.assertEqual(values["IGNORE_NAMES"], [])
+        self.assertEqual(values["IGNORE_TOPICS"], [])
+
     def test_default_local_file_is_next_to_default_config(self) -> None:
         self.assertEqual(
             config.LOCAL_CONFIG_PATH,
@@ -100,6 +106,30 @@ class TestEffectiveConfiguration(unittest.TestCase):
             self.assertTrue(cfp_writer._event_type_included(event_type))
         self.assertTrue(cfp_writer._event_type_patterns())
         cfp_writer._ignored_names()
+
+    def test_filter_settings_reject_strings_as_collections(self) -> None:
+        from unittest import mock
+
+        for name in ("IGNORE_NAMES", "IGNORE_TOPICS", "CONFS_TECH_TOPICS"):
+            with self.subTest(name=name), mock.patch.object(config, name, "ai"):
+                with self.assertRaisesRegex(ValueError, name):
+                    config.validate_filter_settings()
+
+    def test_filter_settings_reject_blank_entries(self) -> None:
+        from unittest import mock
+
+        for name in ("IGNORE_NAMES", "IGNORE_TOPICS", "CONFS_TECH_TOPICS"):
+            for value in ([""], ["  "], [None]):
+                with self.subTest(name=name, value=value), mock.patch.object(config, name, value):
+                    with self.assertRaisesRegex(ValueError, name):
+                        config.validate_filter_settings()
+
+    def test_empty_filter_collections_are_allowed(self) -> None:
+        from unittest import mock
+
+        for name in ("IGNORE_NAMES", "IGNORE_TOPICS", "CONFS_TECH_TOPICS"):
+            with self.subTest(name=name), mock.patch.object(config, name, []):
+                config.validate_filter_settings()
 
 
 if __name__ == "__main__":

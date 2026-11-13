@@ -33,7 +33,9 @@ def load_module(path: Path, name: str):
 
 
 pmi = load_module(ROOT / "src" / "process-manual-input.py", "pmi")
+import cfp_writer as writer  # noqa: E402
 import config  # noqa: E402  shared by src manuals and tests config patches
+from reconcile import reconcile_rows  # noqa: E402
 
 SAMPLE = (FIX / "input.sample.md").read_text(encoding="utf-8")
 
@@ -117,6 +119,38 @@ class TestParseRows(unittest.TestCase):
         ai_engineer = next(r for r in self.rows if "AI Engineer Europe 2027" in r["name"])
         self.assertIn("AI in Production", ai_engineer["topics"])
 
+    def test_unrelated_wide_and_prestige_tables_are_ignored(self) -> None:
+        unrelated = """\
+| Service | Owner | CFP Open | CFP Close | Conference Date | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Not a conference | Platform | Oct 2026 | Dec 2026 | May 7, 2027 | Ignore this |
+
+| Criterion | Flagship | Major | Notable | Evidence | Score |
+| --- | --- | --- | --- | --- | --- |
+| Attendance | Huge | Large | Medium | Public data | 1 |
+"""
+        prestige = (ROOT / "prestige.md").read_text(encoding="utf-8")
+        self.assertEqual(pmi.parse_rows(unrelated + "\n" + prestige), [])
+
+    def test_columns_are_mapped_from_a_reordered_header(self) -> None:
+        text = """\
+| Topics | Event/Dates | CFP Close | CFP Open | Location | Conf Name |
+| --- | --- | --- | --- | --- | --- |
+| AI, Agents | May 7, 2027 | Dec 31, 2026 | Oct 2026 | Seattle, WA | **[Example Conf](https://example.com/)** |
+"""
+        self.assertEqual(
+            pmi.parse_rows(text),
+            [{
+                "name": "Example Conf",
+                "location": "Seattle, WA",
+                "cfp_close": "2026-12-31",
+                "event_date": "May 7, 2027",
+                "topics": "AI, Agents",
+                "event_url": "https://example.com/",
+                "cfp_url": "",
+            }],
+        )
+
 
 class TestManualInputFiles(unittest.TestCase):
     def test_only_listed_files_are_read(self) -> None:
@@ -154,6 +188,109 @@ class TestManualInputFiles(unittest.TestCase):
                     self.assertEqual(pmi.main(), 1)
 
 
+class TestCollectRows(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.input_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_returns_normalized_rows_without_writing_notes(self) -> None:
+        (self.input_dir / "manual.md").write_text("""\
+| Conf Name | Location | CFP Open | CFP Close | Event/Dates | Topics |
+| --- | --- | --- | --- | --- | --- |
+| Dateless Conference | Online | Oct 2026 | Dec 2026 / Unstated | Spring 2027 | AI, Agents |
+| Impossible Date | London, UK | Oct 2026 | Early 2027 | Feb 31, 2027 | AI |
+""", encoding="utf-8")
+        with (
+            mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]),
+            mock.patch("cfp_writer.upsert_counted") as upsert_counted,
+            mock.patch("cfp_writer.upsert") as upsert,
+        ):
+            rows = pmi.collect_rows(self.input_dir)
+
+        upsert_counted.assert_not_called()
+        upsert.assert_not_called()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["event_date"], "TBA")
+        self.assertEqual(rows[1]["event_date"], "TBA")
+        self.assertEqual(rows[0]["cfp_close"], "Dec 2026")
+        self.assertEqual(rows[1]["cfp_close"], "Early 2027")
+        self.assertEqual(rows[0]["topics"], ["AI", "Agents"])
+        self.assertEqual(rows[0]["source"], "manual")
+        self.assertEqual(rows[0]["country"], "")
+
+    def test_legacy_free_text_year_keeps_identity_and_curation_with_tba_date(self) -> None:
+        (self.input_dir / "manual.md").write_text("""\
+| Conf Name | Location | CFP Open | CFP Close | Event/Dates | Topics |
+| --- | --- | --- | --- | --- | --- |
+| Example Conf | Online | Oct 2026 | Unstated | Spring 2027 | AI |
+""", encoding="utf-8")
+        with mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]):
+            rows = pmi.collect_rows(self.input_dir)
+
+        self.assertEqual(len(rows), 1)
+        current = rows[0]
+        self.assertEqual(current["event_date"], "TBA")
+        self.assertEqual(current["cfp_close"], "Unstated")
+        self.assertEqual(current["cfp_url"], "")
+        self.assertEqual(current["_legacy_event_year"], "2027")
+
+        data = self.input_dir / "data"
+        legacy = {**current, "event_date": "Spring 2027"}
+        self.assertEqual(writer.upsert(data, legacy, today="2026-11-01"), "new")
+        legacy_path = data / "2027/2027_example-conf.md"
+        self.assertTrue(legacy_path.is_file())
+        legacy_path.write_text(
+            legacy_path.read_text(encoding="utf-8")
+            .replace("shortlist: false", "shortlist: true")
+            .replace("updated:", "priority: high\nupdated:", 1)
+            .replace("_Add notes here._", "Keep this curation."),
+            encoding="utf-8",
+        )
+
+        result = reconcile_rows(data, {"manual": [current]}, today="2026-11-12")
+
+        self.assertEqual(result.summaries["manual"]["updated"], 1)
+        self.assertEqual(result.produced, {"2027/2027_example-conf.md"})
+        self.assertEqual(result.superseded, set())
+        self.assertFalse((data / "misc/example-conf.md").exists())
+        fm, body = writer._read_frontmatter(legacy_path)
+        self.assertEqual(fm["event_date"], "TBA")
+        self.assertTrue(fm["shortlist"])
+        self.assertEqual(fm["priority"], "high")
+        self.assertIn("Keep this curation.", body)
+        self.assertNotIn("Spring 2027", legacy_path.read_text(encoding="utf-8"))
+
+        second = reconcile_rows(data, {"manual": [current]}, today="2026-11-13")
+        self.assertEqual(second.summaries["manual"]["unchanged"], 1)
+
+    def test_watchlist_failure_raises_without_calling_note_writer(self) -> None:
+        (self.input_dir / "manual.md").write_text(
+            SAMPLE + "\n- [Down](https://down.example/)\n", encoding="utf-8"
+        )
+        failed = pmi.watchlist.CfpResult(
+            "Down", "https://down.example/", error="TimeoutError", failed=True
+        )
+        with (
+            mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]),
+            mock.patch.object(pmi.watchlist, "resolve", return_value=failed),
+            mock.patch("cfp_writer.upsert_counted") as upsert_counted,
+            mock.patch("cfp_writer.upsert") as upsert,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Down.*TimeoutError"):
+                pmi.collect_rows(self.input_dir)
+
+        upsert_counted.assert_not_called()
+        upsert.assert_not_called()
+
+    def test_missing_configured_source_raises(self) -> None:
+        with mock.patch.object(config, "MANUAL_INPUT_FILES", ["missing.md"]):
+            with self.assertRaisesRegex(FileNotFoundError, "missing.md"):
+                pmi.collect_rows(self.input_dir)
+
+
 class TestWatchlistEndToEnd(unittest.TestCase):
     """The manual CLI processes the checklist via a pre-seeded HTML cache, offline."""
 
@@ -184,7 +321,7 @@ class TestWatchlistEndToEnd(unittest.TestCase):
         return run_manual_cli(
             [
                 "--out", str(self.out), "--input", str(self.input_dir),
-                "--cache", str(self.cache),
+                "--cache", str(self.cache), "--offline",
             ],
             cwd=str(ROOT),
         )

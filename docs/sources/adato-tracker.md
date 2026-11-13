@@ -7,7 +7,7 @@
 
 ## Data and access
 
-Leon Adato's public eight-column table supplies Event Name, City, State, Event Start, Event End, CFP Close, Event URL, and CFP URL. No authentication is required. Dates are expected as strict ISO `YYYY-MM-DD`; the last two columns provide hyperlinks rather than useful link text. The adapter prefers readable `cache/adato-tracker.html` indefinitely and otherwise fetches the page once.
+Leon Adato's public eight-column table supplies Event Name, City, State, Event Start, Event End, CFP Close, Event URL, and CFP URL. No authentication is required. Dates are expected as strict ISO `YYYY-MM-DD`; the last two columns provide hyperlinks rather than useful link text. Live fetches refresh `cache/adato-tracker.html`. A failed fetch uses readable cached HTML. `--offline` requires a cached page.
 
 ## Caveats
 

@@ -7,7 +7,7 @@
 
 ## Data and access
 
-The paginated public API requires no authentication. Records include `name`, `website`, `slug`, `start_date`, `cfp_open_at`/`cfp_close_at`, `location`, `country`, `is_online`, comma-separated `tags`, and speaker-benefit flags. Readable page caches under `cache/cfp-ninja-events-<N>.json` are preferred indefinitely; invalid caches are refetched.
+The paginated public API requires no authentication. Records include `name`, `website`, `slug`, `start_date`, `cfp_open_at`/`cfp_close_at`, `location`, `country`, `is_online`, comma-separated `tags`, and speaker-benefit flags. Live fetches refresh `cache/cfp-ninja-events-<N>.json`. A failed fetch uses valid cached JSON. `--offline` requires cached pages.
 
 ## Caveats
 

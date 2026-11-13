@@ -10,7 +10,7 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -36,11 +36,17 @@ CUTOFF = datetime.date(2026, 10, 13)
 
 
 class OpenTechTestCase(unittest.TestCase):
+    def setUp(self) -> None:
+        # Fixture coverage must not depend on a developer's personal filters.
+        ignore_patch = mock.patch.object(potc, "_IGNORE", [])
+        ignore_patch.start()
+        self.addCleanup(ignore_patch.stop)
+
     def collect(self, open_data=None, closed_data=None, cutoff=CUTOFF):
         open_data = OPEN if open_data is None else open_data
         closed_data = CLOSED if closed_data is None else closed_data
 
-        def fake_fetch(url, cache_path=None, cache_key=None):
+        def fake_fetch(url, cache_path=None, cache_key=None, offline=False):
             if url.endswith("/open.json"):
                 return copy.deepcopy(open_data)
             if url.endswith("/closed.json"):
@@ -49,6 +55,93 @@ class OpenTechTestCase(unittest.TestCase):
 
         with mock.patch.object(potc, "_fetch_json", side_effect=fake_fetch):
             return potc.collect_rows(cutoff)
+
+
+class TestFetchCache(OpenTechTestCase):
+    def test_online_fetch_refreshes_an_existing_cache_atomically(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "feed.json"
+            dest.write_text('{"cfps": []}', encoding="utf-8")
+            response = io.BytesIO(b'{"cfps": [{"name": "Live"}]}')
+            with mock.patch("http_cache.urllib.request.urlopen", return_value=response) as fetch:
+                result = potc._fetch_json("https://example.test", cache, "feed.json")
+            self.assertEqual(result, {"cfps": [{"name": "Live"}]})
+            self.assertEqual(
+                json.loads(dest.read_text(encoding="utf-8")),
+                {"cfps": [{"name": "Live"}]},
+            )
+            self.assertEqual(list(cache.glob("*.tmp")), [])
+            fetch.assert_called_once()
+
+    def test_fetch_error_uses_and_reports_valid_cached_fallback(self) -> None:
+        cached = {"cfps": [{"name": "Cached"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "feed.json").write_text(json.dumps(cached), encoding="utf-8")
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")),
+                redirect_stderr(io.StringIO()) as errors,
+            ):
+                result = potc._fetch_json("https://example.test", cache, "feed.json")
+            self.assertEqual(result, cached)
+            self.assertIn("cache fallback", errors.getvalue())
+
+    def test_schema_invalid_live_feed_preserves_the_old_good_cache(self) -> None:
+        cached = {"cfps": [{"name": "Cached"}]}
+        cached_text = json.dumps(cached, indent=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "feed.json"
+            dest.write_text(cached_text, encoding="utf-8")
+            response = io.BytesIO(b'{"message": "temporarily unavailable"}')
+            with (
+                mock.patch("http_cache.urllib.request.urlopen", return_value=response),
+                redirect_stderr(io.StringIO()),
+            ):
+                result = potc._fetch_json("https://example.test/feed.json", cache, "feed.json")
+            self.assertEqual(result, cached)
+            self.assertEqual(dest.read_text(encoding="utf-8"), cached_text)
+
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                offline_result = potc._fetch_json(
+                    "https://example.test/feed.json", cache, "feed.json", offline=True
+                )
+            self.assertEqual(offline_result, cached)
+            fetch.assert_not_called()
+
+    def test_offline_rejects_a_schema_invalid_cached_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            dest = cache / "feed.json"
+            dest.write_text('{"message": "temporarily unavailable"}', encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                with self.assertRaisesRegex(ValueError, "cfps list"):
+                    potc._fetch_json(
+                        "https://example.test/feed.json", cache, "feed.json", offline=True
+                    )
+            self.assertEqual(dest.read_text(encoding="utf-8"), '{"message": "temporarily unavailable"}')
+            fetch.assert_not_called()
+
+    def test_offline_reads_cache_without_touching_the_network(self) -> None:
+        cached = {"cfps": [{"name": "Cached"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "feed.json").write_text(json.dumps(cached), encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen") as fetch:
+                result = potc._fetch_json(
+                    "https://example.test", cache, "feed.json", offline=True
+                )
+            self.assertEqual(result, cached)
+            fetch.assert_not_called()
+
+    def test_malformed_cache_is_not_a_silent_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp)
+            (cache / "feed.json").write_text("not json", encoding="utf-8")
+            with mock.patch("http_cache.urllib.request.urlopen", side_effect=OSError("down")):
+                with self.assertRaisesRegex(ValueError, "cache fallback is unavailable"):
+                    potc._fetch_json("https://example.test", cache, "feed.json")
 
 
 class TestDatesAndBenefits(OpenTechTestCase):
@@ -173,7 +266,7 @@ class TestCollectRows(OpenTechTestCase):
 
 class TestMain(OpenTechTestCase):
     def test_writes_notes_source_and_manifest(self) -> None:
-        def fake_fetch(url, cache_path=None, cache_key=None):
+        def fake_fetch(url, cache_path=None, cache_key=None, offline=False):
             return copy.deepcopy(OPEN if url.endswith("/open.json") else CLOSED)
 
         with tempfile.TemporaryDirectory() as tmp:

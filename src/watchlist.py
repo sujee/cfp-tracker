@@ -5,9 +5,10 @@ The input is intentionally a *checklist*, not a CFP table::
     - [HumanX](https://www.humanx.co/)
 
 Only these explicit links are checked; the module never uses external search or
-invents CFP paths. For each conference site it picks one likely speaker
-submission link, then reads that page for Schema.org ``Event`` metadata and
-explicit deadline text. Generic speaker line-ups are not treated as CFP pages.
+invents CFP paths. For each conference site it ranks likely speaker-submission
+links and checks at most three candidates, falling back when a higher-ranked
+page is closed or unreadable. It reads Schema.org ``Event`` metadata and explicit
+deadline text. Generic speaker line-ups are not treated as CFP pages.
 
 This is deliberately conservative: an unstated CFP close stays ``Unstated``,
 and an event date not present in a structured event or displayed on the page
@@ -20,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 import urllib.request
 from dataclasses import dataclass
 from datetime import date
@@ -28,6 +30,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 from cfp_writer import parse_start_date
+from http_cache import write_text_atomic
 
 _ENTRY_RE = re.compile(
     r"^\s*[-*+]\s+\[([^\]]+)\]\((\s*<?https?://[^)\s>]+>?)(?:\s+[\"'][^)]*)?\)\s*$",
@@ -45,15 +48,24 @@ _DEADLINE_RE = re.compile(
     re.IGNORECASE,
 )
 # Match an explicit submission-state close, not an upcoming date with "closes".
-# "CFP is not closed" / "Submissions are not closed" must not match.
+# Negations such as "CFP has not been closed" must not match.
 _CLOSED_RE = re.compile(
     r"\b(?:"
     r"(?:speaker\s+)?(?:cfp|call\s+for\s+(?:papers?|proposals?|speakers?))\s+"
-    r"(?:is\s+|has\s+)?(?:now\s+)?closed\b"
-    r"|(?:applications?|submissions?)\s+(?:are\s+|is\s+|has\s+|have\s+)?(?:now\s+)?closed\b"
+    r"(?:(?:is|was|has|have)\s+)?(?:(?:now|been)\s+)*closed\b"
+    r"|(?:applications?|submissions?)\s+"
+    r"(?:(?:are|is|was|were|has|have)\s+)?(?:(?:now|been)\s+)*closed\b"
     r")",
     re.IGNORECASE,
 )
+_CFP_TITLE_RE = re.compile(
+    r"(?:cfp|call\s+for\s+(?:papers?|proposals?|speakers?|participation)|"
+    r"speaker\s+(?:applications?|submissions?)|apply(?:\s+to\s+speak|\s+now)?|"
+    r"submit(?:\s+(?:a|your))?\s+(?:paper|proposal|session|talk))"
+    r"(?:\s+(?:19|20)\d{2})?",
+    re.IGNORECASE,
+)
+_MAX_CANDIDATE_PAGES = 3
 
 
 @dataclass(frozen=True)
@@ -236,8 +248,10 @@ def _iso_date(value) -> str:
         return ""
 
 
-def _schema_event(parser: _PageParser) -> dict:
-    """Prefer a fully identifiable upcoming Event from Schema.org JSON-LD."""
+def _schema_event(parser: _PageParser, today=None) -> dict:
+    """Prefer the nearest upcoming complete Event relative to the run date."""
+    events = []
+    complete = []
     for root in parser.json_ld:
         for obj in _walk_json(root):
             types = obj.get("@type", "")
@@ -246,10 +260,21 @@ def _schema_event(parser: _PageParser) -> dict:
             if "Event" not in types:
                 continue
             start = _iso_date(obj.get("startDate"))
+            event = {**obj, "startDate": start} if start else obj
+            events.append(event)
             if obj.get("name") and start:
-                return {"startDate": start, **obj}
-            return obj  # Structured name/location is still useful without a date.
-    return {}
+                complete.append((start, event))
+    effective = date.today() if today is None else today
+    if not isinstance(effective, date):
+        effective = date.fromisoformat(str(effective))
+    effective = effective.isoformat()
+    complete.sort(key=lambda item: item[0])
+    for start, event in complete:
+        if start >= effective:
+            return event
+    if complete:
+        return complete[-1][1]  # The most recent past edition, not the earliest.
+    return events[0] if events else {}  # A name/location without a date can still help.
 
 
 def _event_location(event: dict) -> str:
@@ -280,25 +305,70 @@ def _event_location(event: dict) -> str:
     return ""
 
 
-def _deadline(text: str) -> str:
-    """Read a stated close only when deadline wording sits next to a date.
+def _is_registration_deadline(text: str, match: re.Match) -> bool:
+    """Distinguish attendee registration wording from a submission deadline."""
+    prefix = text[max(0, match.start() - 60):match.start()]
+    return bool(re.search(r"\bregistration\s*$", prefix, re.IGNORECASE))
 
-    Dates anywhere else on an event page (the conference dates, copyright year,
-    old workshops) must not become the CFP deadline. Rubber-stamping the first
-    date found is why this function deliberately takes the small surrounding
-    window instead of scanning the whole document.
-    """
+
+def _deadline_occurrences(text: str, include_registration: bool = False):
+    """Yield ``(ISO date, span)`` for dates attached to deadline wording."""
     for match in _DEADLINE_RE.finditer(text):
+        if not include_registration and _is_registration_deadline(text, match):
+            continue
         nearby = text[match.end(): match.end() + 180]
-        iso = _iso_date(nearby)
+        iso = re.match(r"\s*(\d{4}-\d{2}-\d{2})", nearby)
         if iso:
-            return iso
+            parsed = _iso_date(iso.group(1))
+            if parsed:
+                span = (match.end() + iso.start(1), match.end() + iso.end(1))
+                yield parsed, span
+                continue
         natural = _MONTH_DATE_RE.search(nearby)
         if natural:
             parsed = parse_start_date(natural.group(0))
             if parsed:
+                span = (match.end() + natural.start(), match.end() + natural.end())
+                yield parsed, span
+
+
+def _deadline(text: str) -> str:
+    """Read a stated CFP close only when deadline wording sits next to a date.
+
+    Dates anywhere else on an event page (the conference dates, copyright year,
+    old workshops) must not become the CFP deadline. Registration closes are
+    attendee deadlines, not CFP deadlines. The small surrounding window avoids
+    rubber-stamping an unrelated date found elsewhere in the document.
+    """
+    for closing, _span in _deadline_occurrences(text):
+        return closing
+    return ""
+
+
+def _readable_event_date(texts: list[str]) -> str:
+    """Return the first readable date that is not an administrative deadline."""
+    for text in texts:
+        ignored = [span for _date, span in _deadline_occurrences(text, include_registration=True)]
+        for found in _MONTH_DATE_RE.finditer(text):
+            if any(start <= found.start() < end for start, end in ignored):
+                continue
+            parsed = parse_start_date(found.group(0))
+            if parsed:
                 return parsed
     return ""
+
+
+def _title_name(title: str, fallback_name: str = "") -> str:
+    """Choose a conference title segment rather than a generic CFP label."""
+    parts = [part.strip() for part in re.split(r"\s+[|–—]\s+", title) if part.strip()]
+    if fallback_name:
+        for part in parts:
+            if part.casefold() == fallback_name.casefold():
+                return fallback_name
+    for part in parts:
+        if not _CFP_TITLE_RE.fullmatch(part):
+            return part
+    return fallback_name or (parts[0] if parts else "")
 
 
 def deadline_before_today(cfp_close: str, today=None) -> bool:
@@ -319,25 +389,19 @@ def deadline_before_today(cfp_close: str, today=None) -> bool:
     return closing < current.isoformat()
 
 
-def page_details(cfp_url: str, html: str, fallback_name: str = "") -> dict:
-    """Extract CFP/event details from one candidate page."""
+def page_details(cfp_url: str, html: str, fallback_name: str = "", today=None) -> dict:
+    """Extract CFP/event details from one candidate page relative to the run date."""
     p = _PageParser()
     p.feed(html)
-    event = _schema_event(p)
+    event = _schema_event(p, today=today)
     start = _iso_date(event.get("startDate"))
     if not start:
         # Readable event dates in concise meta copy and visible page copy are a
-        # weaker signal than JSON-LD, but a normal conference footer is useful.
-        for text in [*p.descriptions, p.visible_text]:
-            found = _MONTH_DATE_RE.search(text)
-            if found:
-                start = parse_start_date(found.group(0))
-                if start:
-                    break
+        # weaker signal than JSON-LD. Never recycle a CFP/registration deadline.
+        start = _readable_event_date([*p.descriptions, p.visible_text])
     name = str(event.get("name") or "").strip()
     if not name:
-        title = p.title or fallback_name
-        name = re.split(r"\s+[|–—]\s+", title)[-1].strip() or fallback_name
+        name = _title_name(p.title, fallback_name)
     deadline = _deadline(f"{p.title} {p.visible_text}")
     if deadline and start and deadline > start:
         # A stated close after the conference date cannot be this event's close.
@@ -361,19 +425,43 @@ def fetch_url(url: str, timeout: int = 25) -> str:
         return response.read().decode("utf-8", errors="replace")
 
 
-def _cache_fetch(url: str, cache: Path | None = None, fetcher=None) -> str:
-    """Read an explicitly supplied HTML cache first, then fetch live."""
+def _cache_fetch(
+    url: str,
+    cache: Path | None = None,
+    fetcher=None,
+    offline: bool = False,
+) -> str:
+    """Fetch live HTML first unless offline mode explicitly requires the cache."""
     target = cache / (hashlib.sha256(url.encode()).hexdigest()[:20] + ".html") if cache else None
-    if target is not None and target.is_file():
+    if offline:
+        if target is None or not target.is_file():
+            raise FileNotFoundError(f"offline mode requires cached response for {url}")
         return target.read_text(encoding="utf-8")
-    text = (fetcher or fetch_url)(url)
+    try:
+        text = (fetcher or fetch_url)(url)
+    except Exception as fetch_error:
+        if target is None or not target.is_file():
+            raise
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as cache_error:
+            raise ValueError(
+                f"fetch failed for {url}: {fetch_error}; cache fallback failed: {cache_error}"
+            ) from fetch_error
+        print(f"watchlist: using cache fallback for {url}: {fetch_error}", file=sys.stderr)
+        return text
     if target is not None:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        write_text_atomic(target, text)
     return text
 
 
-def resolve(entry: dict, fetcher=None, cache: Path | None = None, today=None) -> CfpResult:
+def resolve(
+    entry: dict,
+    fetcher=None,
+    cache: Path | None = None,
+    today=None,
+    offline: bool = False,
+) -> CfpResult:
     """Resolve one checklist entry to a CFP candidate and its known details.
 
     No candidate, script-only rendering, or failing page returns a result with
@@ -382,7 +470,7 @@ def resolve(entry: dict, fetcher=None, cache: Path | None = None, today=None) ->
     """
     name = str(entry.get("name", "") or "").strip()
     event_url = str(entry.get("event_url", "") or "").strip()
-    fetch = fetcher or (lambda url: _cache_fetch(url, cache))
+    fetch = fetcher or (lambda url: _cache_fetch(url, cache, offline=offline))
     try:
         if today is not None and not isinstance(today, date):
             date.fromisoformat(str(today))  # validate a caller's --today even on a failed site
@@ -390,24 +478,35 @@ def resolve(entry: dict, fetcher=None, cache: Path | None = None, today=None) ->
         candidates = candidate_links(event_url, html)
         if not candidates:
             return CfpResult(name, event_url, error="no explicit speaker-submission link")
-        chosen, _label, _score = candidates[0]
-        result = page_details(chosen, fetch(chosen), fallback_name=name)
-        result["event_url"] = event_url
-        if not result["name"]:
-            result["name"] = name
-        # A permanent past CFP URL is evidence of a historical submission page,
-        # not of an open CFP. Explicit close wording wins even when no deadline
-        # is stated on the page. With a date, closing today remains eligible,
-        # matching the other sources' >= today convention.
-        details = dict(result)
-        explicitly_closed = details.pop("closed")
-        if explicitly_closed or deadline_before_today(details["cfp_close"], today):
-            reason = (
-                f"CFP is explicitly closed: {chosen}"
-                if explicitly_closed
-                else f"CFP closed {details['cfp_close']}: {chosen}"
-            )
-            return CfpResult(**details, error=reason)
-        return CfpResult(**details)
+        rejected = []
+        fetch_errors = []
+        for chosen, _label, _score in candidates[:_MAX_CANDIDATE_PAGES]:
+            try:
+                result = page_details(chosen, fetch(chosen), fallback_name=name, today=today)
+            except Exception as exc:
+                fetch_errors.append(f"{type(exc).__name__} at {chosen}: {exc}")
+                continue
+            result["event_url"] = event_url
+            if not result["name"]:
+                result["name"] = name
+            # A permanent past CFP URL is evidence of a historical submission
+            # page. A closed top candidate may still have a current alternative.
+            details = dict(result)
+            explicitly_closed = details.pop("closed")
+            if explicitly_closed or deadline_before_today(details["cfp_close"], today):
+                reason = (
+                    f"CFP is explicitly closed: {chosen}"
+                    if explicitly_closed
+                    else f"CFP closed {details['cfp_close']}: {chosen}"
+                )
+                rejected.append(CfpResult(**details, error=reason))
+                continue
+            # Closing today remains eligible, matching the other sources' >= rule.
+            return CfpResult(**details)
+        if fetch_errors:
+            reasons = fetch_errors + [result.error for result in rejected]
+            return CfpResult(name, event_url, error="; ".join(reasons), failed=True)
+        if rejected:
+            return rejected[0]
     except Exception as exc:
         return CfpResult(name, event_url, error=f"{type(exc).__name__}: {exc}", failed=True)

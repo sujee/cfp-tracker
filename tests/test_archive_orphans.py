@@ -164,6 +164,28 @@ class TestArchiveOrphans(ArchiveTestCase):
         self.assertTrue((self.data / "2026/drop.md").is_file())
         self.assertFalse(self.archive.exists())
 
+    def test_existing_destination_aborts_without_overwriting_or_moving(self) -> None:
+        self.note("2026/drop.md")
+        self.note("2027/other.md")
+        destination = self.archive / "2026/drop.md"
+        destination.parent.mkdir(parents=True)
+        destination.write_text("older curated archive", encoding="utf-8")
+
+        with self.assertRaises(arch.ArchiveCollisionError):
+            arch.archive_orphans(self.data, self.archive, set())
+        self.assertEqual(destination.read_text(encoding="utf-8"), "older curated archive")
+        self.assertTrue((self.data / "2026/drop.md").is_file())
+        self.assertTrue((self.data / "2027/other.md").is_file())
+
+    def test_superseded_curated_note_moves_after_reconciliation(self) -> None:
+        text = "---\ntype: cfp\nshortlist: true\n---\n\n## Notes\n\nSubmitted already.\n"
+        self.note("2026/old.md", text)
+        moved = arch.archive_orphans(
+            self.data, self.archive, set(), superseded={"2026/old.md"}
+        )
+        self.assertEqual(moved, ["2026/old.md"])
+        self.assertEqual((self.archive / "2026/old.md").read_text(encoding="utf-8"), text)
+
 
 class TestLoadManifests(ArchiveTestCase):
     def test_union_of_multiple_manifests(self) -> None:
@@ -176,8 +198,15 @@ class TestLoadManifests(ArchiveTestCase):
             {"2026/x.md", "2026/shared.md", "2027/y.md"},
         )
 
-    def test_missing_manifest_ignored(self) -> None:
-        self.assertEqual(arch.load_manifests([Path(self._tmp.name) / "nope.json"]), set())
+    def test_missing_manifest_fails_closed(self) -> None:
+        with self.assertRaises(FileNotFoundError):
+            arch.load_manifests([Path(self._tmp.name) / "nope.json"])
+
+    def test_unsafe_manifest_paths_are_rejected(self) -> None:
+        path = Path(self._tmp.name) / "bad.json"
+        path.write_text(json.dumps(["../outside.md"]), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            arch.load_manifests([path])
 
 
 class TestNotePathAndManifest(unittest.TestCase):

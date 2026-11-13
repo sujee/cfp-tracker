@@ -1022,7 +1022,7 @@ class TestCrossSourceDuplicateByCfpUrl(WriterTestCase):
         dev = sample_row(
             name="Power Platform Days",
             source="developers.events",
-            cfp_url="https://Sessionize.com/PowerPlatform/",
+            cfp_url="https://Sessionize.com/powerplatform/",
         )
         confs = sample_row(
             name="Power Platform Days Barcelona",
@@ -1032,6 +1032,12 @@ class TestCrossSourceDuplicateByCfpUrl(WriterTestCase):
         self.assertEqual(cw.upsert(self.data, dev), "new")
         self.assertEqual(cw.upsert(self.data, confs), "skipped")
         self.assertFalse(self.paths(confs)[0].exists())
+
+    def test_url_normalization_preserves_case_sensitive_paths(self) -> None:
+        self.assertNotEqual(
+            cw._url_key("https://Sessionize.com/FormABC"),
+            cw._url_key("https://sessionize.com/formabc"),
+        )
 
     def test_shared_form_across_distinct_events_is_not_merged(self) -> None:
         # JS Poland / NG Poland / AI Poland share one Google form.
@@ -1734,6 +1740,63 @@ class TestYamlScalarQuoting(WriterTestCase):
         self.assertIn('event_name: "2026"', text)
         fm, _ = cw._read_frontmatter(path)
         self.assertEqual(fm["event_name"], "2026")
+
+
+class TestMetadataSafety(WriterTestCase):
+    def test_extra_yaml_preserves_indentless_lists_blank_lines_and_quoted_keys(self) -> None:
+        self.write_initial()
+        text = self.path.read_text(encoding="utf-8")
+        extra = (
+            'tags:\n'
+            '- ai\n'
+            '- speaking\n'
+            'contact:\n'
+            '  description: |\n'
+            '    First paragraph.\n'
+            '\n'
+            '    Second paragraph.\n'
+            '  slack: "@sujee"\n'
+            '"quoted key": retained\n'
+        )
+        self.path.write_text(text.replace("---\n\n## Notes", extra + "---\n\n## Notes"), encoding="utf-8")
+
+        self.assertTrue(cw.normalize_file(self.path))
+        fm, body = cw._read_frontmatter(self.path)
+        self.assertEqual(fm["tags"], ["ai", "speaking"])
+        self.assertEqual(fm["quoted key"], "retained")
+        self.assertEqual(fm["contact"]["slack"], "@sujee")
+        self.assertIn("First paragraph.\n\nSecond paragraph.", fm["contact"]["description"])
+
+    def test_normalize_ignores_non_cfp_markdown_byte_for_byte(self) -> None:
+        self.write_initial()
+        self.path.write_text(
+            "---\ntype: project\nname: Vault project\n---\n\nProject body.\n",
+            encoding="utf-8",
+        )
+        before = self.path.read_bytes()
+        self.assertFalse(cw.normalize_file(self.path))
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_legacy_frontmatter_notes_move_to_body(self) -> None:
+        self.write_initial()
+        text = self.path.read_text(encoding="utf-8").replace(
+            "type: cfp\n", "type: cfp\nnotes: Remember the deadline.\n", 1
+        )
+        self.path.write_text(text, encoding="utf-8")
+
+        self.assertTrue(cw.normalize_file(self.path))
+        fm, body = cw._read_frontmatter(self.path)
+        self.assertNotIn("notes", fm)
+        self.assertIn("Remember the deadline.", body)
+
+    def test_iso_shaped_strings_are_not_yaml_dates(self) -> None:
+        row = sample_row(name="2026-01-02", topics=["2027-03-04"])
+        path = cw.note_path(self.data, row)
+        cw.upsert(self.data, row)
+        fm, _ = cw._read_frontmatter(path)
+        self.assertEqual(fm["event_name"], "2026-01-02")
+        self.assertEqual(fm["topics"], ["2027-03-04"])
+        self.assertIsInstance(fm["event_date"], datetime.date)
 
 
 class TestCfpTemplate(unittest.TestCase):

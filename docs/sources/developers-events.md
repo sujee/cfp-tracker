@@ -7,7 +7,7 @@
 
 ## Data and access
 
-The public JSON needs no authentication. CFP records provide `link`, free-text `until`, epoch-millisecond `untilDate`, and `conf` event data. The separate events file supplies dates, locations, links, and `tech`/`topic`/`language` tags for enrichment. The adapter attempts fresh downloads with `curl` on every run and can read existing cached files after download failure.
+The public JSON needs no authentication. CFP records provide `link`, free-text `until`, epoch-millisecond `untilDate`, and `conf` event data. The separate events file supplies dates, locations, links, and `tech`/`topic`/`language` tags for enrichment. The adapter fetches live data through the shared online-first cache. A failed fetch uses a valid cached response. `--offline` requires cached responses.
 
 ## Caveats
 
@@ -15,7 +15,7 @@ Do not scrape the rendered CFP page or filter on `conf.status`: the page is a st
 
 ## Integration guidance
 
-Select deadlines inclusively from the standalone default cutoff of approximately 90 days back; dedupe by normalized name plus close date. Map `link` to `cfp_url`, the matched event's `hyperlink` to `event_url`, the earliest event date to `event_date`, and `tech`/`topic` tags to topics. `language` tags become lowercase cumulative note languages through the shared writer. The writer also canonicalizes country, strips UTM parameters, and infers sticky `event_type`. This source ranks below `manual` but above every other feed.
+Select deadlines inclusively from the default cutoff of approximately 30 days back. Use the shared `--months-back` or `--past-days` option to change the window. Duplicate export rows collapse by normalized name and close date. Map `link` to `cfp_url`, the matched event's `hyperlink` or the CFP's `conf.hyperlink` to `event_url`, and the earliest event date to `event_date`. `tech`/`topic` tags become topics. `language` tags become lowercase cumulative note languages. The writer canonicalizes country, strips UTM parameters, and infers sticky `event_type`. This source ranks below `manual` but above every other feed among current rows.
 
 ## Evidence
 

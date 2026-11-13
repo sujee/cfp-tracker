@@ -145,13 +145,65 @@ class TestPageDetails(unittest.TestCase):
         html = '<script type="application/ld+json">{bad json}</script><title>CFP | Example Conf</title>'
         self.assertEqual(wl.page_details("https://example.org/cfp", html)["name"], "Example Conf")
 
+    def test_schema_event_skips_incomplete_and_prefers_upcoming(self) -> None:
+        html = '''<script type="application/ld+json">[
+            {"@type":"Event","name":"Incomplete"},
+            {"@type":"Event","name":"Past Complete","startDate":"2020-01-10"},
+            {"@type":"Event","name":"Upcoming Complete","startDate":"2999-06-10"}
+        ]</script>'''
+        result = wl.page_details("https://example.org/cfp", html)
+        self.assertEqual(result["name"], "Upcoming Complete")
+        self.assertEqual(result["event_date"], "2999-06-10")
+
+    def test_schema_event_uses_supplied_run_date(self) -> None:
+        html = '''<script type="application/ld+json">[
+            {"@type":"Event","name":"Edition 2026","startDate":"2026-06-10"},
+            {"@type":"Event","name":"Edition 2027","startDate":"2027-06-10"},
+            {"@type":"Event","name":"Edition 2030","startDate":"2030-06-10"}
+        ]</script>'''
+        result = wl.page_details("https://example.org/cfp", html, today="2028-01-01")
+        self.assertEqual(result["name"], "Edition 2030")
+        self.assertEqual(result["event_date"], "2030-06-10")
+
+    def test_cfp_deadline_is_not_reused_as_event_date(self) -> None:
+        html = '''<h1>CFP closes January 15, 2027</h1>
+                  <p>Example Conf takes place June 10-11, 2027.</p>'''
+        result = wl.page_details("https://example.org/cfp", html)
+        self.assertEqual(result["cfp_close"], "2027-01-15")
+        self.assertEqual(result["event_date"], "2027-06-10")
+
+        only_deadline = wl.page_details("https://example.org/cfp", "<h1>CFP closes January 15, 2027</h1>")
+        self.assertEqual(only_deadline["cfp_close"], "2027-01-15")
+        self.assertEqual(only_deadline["event_date"], "TBA")
+
+    def test_registration_close_is_not_a_cfp_or_event_date(self) -> None:
+        for wording in ("Registration closes December 1, 2026", "Registration deadline: December 1, 2026"):
+            with self.subTest(wording=wording):
+                result = wl.page_details("https://example.org/cfp", f"<p>{wording}</p>")
+                self.assertEqual(result["cfp_close"], "Unstated")
+                self.assertEqual(result["event_date"], "TBA")
+
+    def test_generic_cfp_title_suffix_does_not_replace_conference_name(self) -> None:
+        html = "<title>Example Conf | Call for Papers</title>"
+        result = wl.page_details("https://example.org/cfp", html, fallback_name="Example Conf")
+        self.assertEqual(result["name"], "Example Conf")
+
+    def test_generic_cfp_title_with_year_does_not_replace_conference_name(self) -> None:
+        html = "<title>Call for Papers 2027 | HumanX Amsterdam 2027</title>"
+        result = wl.page_details("https://example.org/cfp", html, fallback_name="HumanX")
+        self.assertEqual(result["name"], "HumanX Amsterdam 2027")
+
     def test_explicit_closed_markers(self) -> None:
         for text in (
             "<h1>Applications Closed</h1>",
             "<h1>CFP is closed</h1>",
+            "<h1>CFP has been closed</h1>",
+            "<h1>CFP has now been closed</h1>",
             "<h1>Call for Papers has now closed</h1>",
+            "<h1>Call for Papers has been closed</h1>",
             "<h1>Speaker submissions closed</h1>",
             "<h1>Submissions are now closed</h1>",
+            "<h1>Submissions have been closed</h1>",
         ):
             with self.subTest(text=text):
                 self.assertTrue(wl.page_details("https://example.org/cfp", text)["closed"])
@@ -159,7 +211,10 @@ class TestPageDetails(unittest.TestCase):
     def test_open_dates_and_negations_are_not_closed_markers(self) -> None:
         for text in (
             "<h1>CFP is not closed</h1>",
+            "<h1>CFP has not been closed</h1>",
+            "<h1>CFP has not yet been closed</h1>",
             "<h1>Submissions are not closed</h1>",
+            "<h1>Submissions have not been closed</h1>",
             "<h1>Submissions will not be closed</h1>",
             "<h1>Applications close on January 3, 2027</h1>",
             "<h1>Now Accepting Submissions</h1>",
@@ -186,6 +241,70 @@ class TestResolveAndCache(unittest.TestCase):
 
     def _site(self, html: str):
         return lambda url: '<a href="/cfp">Call for Papers</a>' if url == "https://example.org/" else html
+
+    def test_closed_top_candidate_falls_through_to_current_candidate(self) -> None:
+        site = '<a href="/old-cfp">Call for Papers</a><a href="/current-cfp">Call for Papers</a>'
+        pages = {
+            "https://example.org/old-cfp": "<h1>CFP has been closed</h1>",
+            "https://example.org/current-cfp": '''<title>Example Conf | Call for Papers</title>
+                <p>Example Conf takes place June 10-11, 2027.</p>''',
+        }
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return site if url == "https://example.org/" else pages[url]
+
+        result = wl.resolve(
+            {"name": "Example Conf", "event_url": "https://example.org/"},
+            fetcher=fetch, today="2026-11-12",
+        )
+        self.assertEqual(result.cfp_url, "https://example.org/current-cfp")
+        self.assertEqual(result.name, "Example Conf")
+        self.assertEqual(result.event_date, "2027-06-10")
+        self.assertEqual(result.error, "")
+        self.assertFalse(result.failed)
+        self.assertEqual(calls, ["https://example.org/", *pages])
+
+    def test_broken_top_candidate_falls_through_to_valid_candidate(self) -> None:
+        site = '<a href="/broken-cfp">Call for Papers</a><a href="/valid-cfp">Apply to Speak</a>'
+
+        def fetch(url):
+            if url == "https://example.org/":
+                return site
+            if url == "https://example.org/broken-cfp":
+                raise TimeoutError("first candidate timed out")
+            return "<h1>Call for Papers</h1>"
+
+        result = wl.resolve(
+            {"name": "Example Conf", "event_url": "https://example.org/"},
+            fetcher=fetch, today="2026-11-12",
+        )
+        self.assertEqual(result.cfp_url, "https://example.org/valid-cfp")
+        self.assertEqual(result.error, "")
+        self.assertFalse(result.failed)
+
+    def test_candidate_fetches_are_bounded_and_total_failure_is_failed(self) -> None:
+        site = "".join(f'<a href="/cfp-{number}">Call for Papers</a>' for number in range(1, 5))
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            if url == "https://example.org/":
+                return site
+            raise TimeoutError(f"could not fetch {url}")
+
+        result = wl.resolve(
+            {"name": "Down", "event_url": "https://example.org/"},
+            fetcher=fetch, today="2026-11-12",
+        )
+        self.assertTrue(result.failed)
+        self.assertIn("TimeoutError", result.error)
+        self.assertEqual(result.cfp_url, "")
+        self.assertEqual(
+            calls,
+            ["https://example.org/"] + [f"https://example.org/cfp-{number}" for number in range(1, 4)],
+        )
 
     def test_explicitly_closed_page_does_not_create_a_cfp(self) -> None:
         html = '<h1>Applications Closed</h1><p>The event is December 9-10, 2026.</p>'
@@ -241,11 +360,11 @@ class TestResolveAndCache(unittest.TestCase):
                 call_count += 1
                 return faked[url]
 
-            # cache_fetch checks disk first and stores after a network call.
+            # A live fetch populates the cache; offline mode reads it explicitly.
             first = wl._cache_fetch("https://example.org", cache, fetcher=once)
             cached = first
             self.assertTrue(list(cache.glob("*.html")))
-            second = wl._cache_fetch("https://example.org", cache, fetcher=once)
+            second = wl._cache_fetch("https://example.org", cache, fetcher=once, offline=True)
             self.assertEqual(first, cached)
             # Explicit faking only here: second call reads the known cache.
             self.assertEqual(second, first)

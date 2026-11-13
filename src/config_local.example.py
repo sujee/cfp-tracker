@@ -8,7 +8,7 @@ Copy this file to ``src/config_local.py`` and edit that copy::
 other values come from ``config.py``. Setting names are ALL_CAPS and must be
 listed in ``config.KNOWN_SETTINGS``; unknown names fail the run. Public imports
 and other non-ALL_CAPS names are ignored, and helper names may start with ``_``.
-This example reproduces the maintainer's personal configuration.
+This example starts with no personal input files or event exclusions.
 """
 
 # confs.tech topics to fetch. general.json is always included; set() means all.
@@ -29,11 +29,8 @@ INPUT_SOURCES = [
     "manual",
 ]
 
-# Only these files inside input/ are read by the manual source.
-MANUAL_INPUT_FILES = [
-    "gmail1.md",
-    "conferences-to-check.md",
-]
+# List personal input files after you create them inside input/.
+MANUAL_INPUT_FILES = []
 
 # Event types retained in data/. Others are skipped and their notes archived.
 EVENT_TYPES = [
@@ -52,17 +49,8 @@ EVENT_TYPES = [
 #     "webinar": ["webinar"],
 # }
 
-# Case-insensitive event-name fragments to reject before note creation.
-IGNORE_NAMES = [
-    ".NET",
-]
+# Optional case-insensitive event-name fragments to reject.
+IGNORE_NAMES = []
 
-# Case-insensitive event-name/topic terms rejected by source adapters.
-IGNORE_TOPICS = [
-    "bitcoin",
-    "crypto",
-    "frontend",
-    "javascript",
-    "mobile",
-    "dotnet",
-]
+# Optional case-insensitive event-name/topic terms to reject.
+IGNORE_TOPICS = []

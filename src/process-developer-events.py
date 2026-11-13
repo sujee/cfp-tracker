@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a markdown report of open + recently-closed CFPs from developers.events.
+"""Write per-CFP notes for open and recently closed developers.events CFPs.
 
 Fetches two public static datasets on every run:
 
@@ -17,11 +17,9 @@ Typical usage::
     python3 src/process-developer-events.py --out /tmp/scratch --today 2026-11-01 --months-back 1
 
 Writes one markdown note per CFP into the ``--out`` **directory** (default
-``data/``), reading live ``developers.events`` JSON. Filtering uses ``untilDate``
-(epoch ms), not the free-form ``until`` string.
+``data/``), reading live ``developers.events`` JSON.
 
-Legacy ``--months-back`` is kept as a 30×N days alias. The old single-file
-``cfps.md`` report is retired (a copy lives in the excluded ``tmp/``).
+Legacy ``--months-back`` is kept as a 30×N days alias.
 """
 
 from __future__ import annotations
@@ -29,16 +27,14 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime
-import json
 import os
 import re
 import sys
-import subprocess
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config as _cfg
+from http_cache import fetch_json as _fetch_cached_json
 
 _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -53,119 +49,9 @@ SRC_URLS: Dict[str, str] = {
     "all-events.json": "https://developers.events/all-events.json",
 }
 
-# Country-name overrides that pycountry misses or that appear verbatim in the
-# feed.  Keys are lower-cased.  Values are ISO 3166-1 alpha-2.
-COUNTRY_ALIASES: Dict[str, str] = {
-    "usa": "US",
-    "uk": "GB",
-    "south korea": "KR",
-    "czechia": "CZ",
-    "democratic republic of the congo": "CD",
-    "ivory coast": "CI",
-    "hong kong": "HK",
-    "kosovo": "XK",
-    "turkey": "TR",
-    "türkiye": "TR",
-    "czech republic": "CZ",
-    "south africa": "ZA",
-    "united arab emirates": "AE",
-    "dominican republic": "DO",
-    "new zealand": "NZ",
-    "bolivia": "BO",
-    "tanzania": "TZ",
-    "iran": "IR",
-    "syria": "SY",
-    "moldova": "MD",
-    "laos": "LA",
-    "brunei": "BN",
-    "cape verde": "CV",
-    "swaziland": "SZ",
-    "macedonia": "MK",
-    "venezuela": "VE",
-    "vietnam": "VN",
-    "russia": "RU",
-    "saudi arabia": "SA",
-    "costa rica": "CR",
-    "sri lanka": "LK",
-}
-
-# Topics that mark a conference as AI-adjacent.  Bare ``data``/``analytics``
-# are deliberately excluded — they pull in BI/SQL-Saturday meetups.
-FOCUS_TAGS: List[str] = [
-    "ai",
-    "artificial-intelligence",
-    "generative-ai",
-    "genai",
-    "machine-learning",
-    "ml",
-    "mlops",
-    "deep-learning",
-    "nlp",
-    "llm",
-    "llms",
-    "agentic-ai",
-    "agent-based-ai",
-    "agents",
-    "ai-agents",
-    "ai-coding",
-    "agentic-coding",
-    "voice-agents",
-    "inference",
-    "copilot",
-    "data-science",
-    "prompt-engineering",
-    "rag",
-    "computer-vision",
-]
-
-# Name heuristic (word boundaries prevent "Dubai"/"Domain" false positives).
-FOCUS_NAME_RE = re.compile(
-    r"(?i)(^|[^a-z])"
-    r"(ai|genai|llm|ml|machine[ -]learning|agent\w*|copilot|"
-    r"deep[ -]learning|data[ -]scien\w*|neural)"
-    r"([^a-z]|$)"
-)
-
-# Presentation constants — extracted so no backslashes leak into f-string
-# expression slots (illegal before Python 3.12).
-EM_DASH = chr(8212)            # —
-EN_ARROW = "\u2192"             # →
-MIDDLE_DOT = "\u00b7"           # ·
-ROBOT = "\U0001f916"            # 🤖
-EARTH = chr(0x1F30E)            # 🌎 (fallback for online events)
-TABLE_HEADER = "| # | Conference | Event date | Location | submission | CFP close | Topics | Links / notes |"
-TABLE_SEP = "|---|------------|-----------|----------|-----------|-----------|--------|----------------|"
-
-# ---------------------------------------------------------------------------
-# Optional: country flag support via pycountry
-# ---------------------------------------------------------------------------
-
-try:
-    import pycountry  # type: ignore[import-not-found]
-
-    _PYCOUNTRY_MAP: Dict[str, str] = {c.name.lower(): c.alpha_2 for c in pycountry.countries}
-except Exception:
-    _PYCOUNTRY_MAP = {}
-
-
 # ---------------------------------------------------------------------------
 # Pure helpers
 # ---------------------------------------------------------------------------
-
-
-def country_flag(country: str | None) -> str:
-    """Return the flag emoji for *country* or ``""`` when unknown.
-
-    ``COUNTRY_ALIASES`` is checked first, then ``pycountry`` (if installed).
-    ``country`` may be ``None``/empty for online-only events.
-    """
-    key = (country or "").strip().lower()
-    if not key:
-        return ""
-    code = COUNTRY_ALIASES.get(key) or _PYCOUNTRY_MAP.get(key)
-    if not code:
-        return ""
-    return "".join(chr(0x1F1E6 + ord(ch) - ord("A")) for ch in code.upper())
 
 
 def normalize_name(name: str | None) -> str:
@@ -191,28 +77,6 @@ def extract_country_from_location(location: str | None) -> str:
     """
     match = re.search(r"\(([^)]+)\)\s*$", location or "")
     return match.group(1).strip() if match else ""
-
-
-def sanitize_misc(raw: str | None) -> str:
-    """Strip HTML tags/entities from ``misc`` and collapse whitespace."""
-    text = re.sub(r"<[^>]+>", " ", raw or "")
-    text = text.replace("\\", " ").replace("&amp;", "&")
-    return " ".join(text.split())
-
-
-def escape_pipes(text: str | None) -> str:
-    """Escape ``|`` so markdown tables don't split mid-cell."""
-    return (text or "").replace("|", "\\|").strip()
-
-
-def format_event_dates(dates_ms: List[int]) -> str:
-    """Human-readable conference date: ``YYYY-MM-DD (Day)`` or range/TBA."""
-    if not dates_ms:
-        return "TBA"
-    unique = sorted({epoch_ms_to_date(ms) for ms in dates_ms})
-    if len(unique) == 1:
-        return unique[0].strftime("%Y-%m-%d (%a)")
-    return f"{unique[0].strftime('%Y-%m-%d')} {EN_ARROW} {unique[-1].strftime('%Y-%m-%d')}"
 
 
 def event_date_start(dates_ms: List[int]) -> str:
@@ -247,31 +111,32 @@ def compute_cutoff(
 # ---------------------------------------------------------------------------
 
 
-def fetch_json(cache_dir: str | os.PathLike[str], filename: str, url: str) -> Any:
-    """Fetch *url* into ``cache_dir/filename`` and return parsed JSON.
+def _validate_feed(data: Any) -> bool:
+    if not isinstance(data, list):
+        raise ValueError("developers.events: expected a JSON list")
+    return True
 
-    Prefers ``curl -fsSL`` (handles redirects / retries); falls back to
-    ``urllib`` only when ``curl`` is absent *and* no cache exists.
-    """
-    cache_path = Path(cache_dir)
-    cache_path.mkdir(parents=True, exist_ok=True)
-    dest = cache_path / filename
 
-    # curl writes even on slow/redirected endpoints; --fail avoids caching HTML.
-    curl_ok = subprocess.run(["curl", "-fsSL", "-o", str(dest), url]).returncode == 0
-    if not curl_ok and not dest.exists():
-        urllib.request.urlretrieve(url, str(dest))
-
-    with dest.open(encoding="utf-8") as fh:
-        return json.load(fh)
+def fetch_json(
+    cache_dir: str | os.PathLike[str], filename: str, url: str, offline: bool = False
+) -> Any:
+    """Fetch JSON through the shared online-first cache."""
+    return _fetch_cached_json(
+        url,
+        Path(cache_dir),
+        filename,
+        offline=offline,
+        source="developers.events",
+        validator=_validate_feed,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Merge CFP ↔ Event
 # ---------------------------------------------------------------------------
 
-# A row is intentionally a plain dict rather than a dataclass — it is rendered
-# immediately and never crosses module boundaries.
+# A row is intentionally a plain dict rather than a dataclass so callers can
+# add the note-level fields before handing it to cfp_writer.
 Row = Dict[str, Any]
 
 
@@ -320,9 +185,9 @@ def build_rows(
     """One enriched row per ``(conference, deadline)`` with ``close >= cutoff``.
 
     Deduplication key is ``(normalized name, close_date)`` — some exports
-    duplicate the same deadline entry verbatim.  Enrichment pulls
-    ``topics/languages/event_url/misc`` from the closest event edition via
-    :func:`select_best_event`.
+    duplicate the same deadline entry verbatim.  Enrichment pulls conference
+    dates, location, country, topics, languages and URLs from the closest event
+    edition via :func:`select_best_event`.
     """
     event_index = build_event_index(events)
     rows: List[Row] = []
@@ -363,7 +228,6 @@ def build_rows(
             continue
         languages = [t["value"] for t in tags if t.get("key") == "language" and t.get("value")]
         country = extract_country_from_location(loc) or event.get("country") or ""
-        online = "online" in (loc or "").lower() or (country or "").lower() == "online"
 
         rows.append(
             {
@@ -372,14 +236,10 @@ def build_rows(
                 "dates": event.get("date") or conf.get("date") or [],
                 "loc": loc,
                 "country": country,
-                "flag": country_flag(country),
                 "topics": topics,
                 "languages": languages,
-                "event_url": event.get("hyperlink") or "",
+                "event_url": event.get("hyperlink") or conf.get("hyperlink") or "",
                 "cfp_url": entry.get("link") or "",
-                "durations": entry.get("durations") or [],
-                "misc": sanitize_misc(event.get("misc")),
-                "online": online,
             }
         )
 
@@ -387,136 +247,31 @@ def build_rows(
     return rows
 
 
-def is_focus_row(row: Row, focus_tags: Set[str]) -> bool:
-    """Whether *row* belongs in the AI/agentic focus set."""
-    if not focus_tags:
-        return False
-    if focus_tags.intersection(row.get("topics") or []):
-        return True
-    return bool(FOCUS_NAME_RE.search(row.get("name") or ""))
-
-
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-
-def render_table(rows: List[Row], focus_tags: Set[str], start: int = 1) -> str:
-    """Render *rows* as the project's markdown table.
-
-    The spec mandates 7 columns plus the row number; pipes in names are
-    escaped and ``|`` splits use negative-lookbehind logic upstream — never
-    change the escaping independently.
-    """
-    lines: List[str] = [TABLE_HEADER, TABLE_SEP]
-
-    # Pre-compute link separators without embedding backslashes in f-string
-    # expression parts (illegal before Python 3.12).
-    link_sep = f" {MIDDLE_DOT} "
-    note_sep = "; "
-
-    for idx, row in enumerate(rows, start):
-        # --- Links column: [site] · [CFP] ---
-        link_bits: List[str] = []
-        if row.get("event_url"):
-            link_bits.append(f"[site]({row['event_url']})")
-        if row.get("cfp_url"):
-            link_bits.append(f"[CFP]({row['cfp_url']})")
-
-        # --- Notes suffix: online / lang: … / talks: … / misc ---
-        notes: List[str] = []
-        if row.get("online"):
-            notes.append("online")
-        if row.get("languages"):
-            notes.append("lang: " + "/".join(row["languages"]))
-        if row.get("durations"):
-            talk_parts = [part.split(":", 1)[1] + "min" for part in row["durations"]]
-            notes.append("talks: " + ", ".join(talk_parts))
-        if row.get("misc"):
-            notes.append(row["misc"][:120])
-
-        # Flag + location cell (🌎 sentinel for online when flag absent).
-        flag_prefix = row.get("flag") or (EARTH if row.get("online") else "")
-        location_cell = escape_pipes(f"{flag_prefix + ' ' if flag_prefix else ''}{row.get('loc', '')}")
-
-        # Robot marker for AI-focus rows.
-        marker = f"{ROBOT} " if focus_tags and row.get("focus") else ""
-        conf_cell = escape_pipes(marker + row.get("name", ""))
-        topics_raw = ", ".join(row.get("topics") or [])
-        topics_cell = escape_pipes(topics_raw or EM_DASH)
-        event_date_cell = format_event_dates(row.get("dates") or [])
-
-        links_text = link_sep.join(link_bits) if link_bits else EM_DASH
-        notes_text = note_sep.join(notes) if notes else EM_DASH
-        links_notes_cell = f"{links_text} {EM_DASH} {notes_text}"
-
-        lines.append(
-            f"| {idx} | **{conf_cell}** | {event_date_cell} | {location_cell} | — | "
-            f"**{row['close'].isoformat()}** | {topics_cell} | {links_notes_cell} |"
-        )
-
-    return "\n".join(lines)
-
-
-def render_frontmatter(today: datetime.date) -> str:
-    """Obsidian frontmatter — fixed three-tag shape."""
-    return (
-        "---\n"
-        "type: cfp-watchlist\n"
-        "title: Open CFPs \u2014 tech conferences (developers.events)\n"
-        f"source: https://developers.events/#/{today.year}/cfp\n"
-        f"generated: {today.isoformat()}\n"
-        "tags:\n"
-        "  - cfp\n"
-        "  - conference\n"
-        "  - speaking\n"
-        "---\n\n"
-    )
-
-
-def render_document(
-    *,
-    today: datetime.date,
+def collect_rows(
     cutoff: datetime.date,
-    open_rows: List[Row],
-    recent_rows: List[Row],
-    all_rows: List[Row],
-    focus_tags: Set[str] | None = None,
-    include_frontmatter: bool,
-) -> str:
-    """Assemble the full markdown note from partitioned rows."""
-    by_month = collections.Counter(r["close"].strftime("%Y-%m") for r in open_rows)
-    by_month_str = ", ".join(f"{k}: {v}" for k, v in sorted(by_month.items()))
-
-    frontmatter = render_frontmatter(today) if include_frontmatter else ""
-    header = (
-        f"# Open CFPs \u2014 tech conferences (from developers.events)\n\n"
-        f"- **Source:** [developers.events](https://developers.events/#/{today.year}/cfp)"
-        f" \u2014 [`all-cfps.json`](https://developers.events/all-cfps.json)"
-        f" + [`all-events.json`](https://developers.events/all-events.json)"
-        f" ([repo](https://github.com/scraly/developers-conferences-agenda))\n"
-        f"- **Generated:** {today.isoformat()} (UTC dates from the source epochs)\n"
-        f"- **Scope:** every CFP with a deadline on/after {cutoff.isoformat()}"
-        f" \u2014 still open plus the past 90\u00a0days, since deadlines get extended.\n"
-        f"- **Counts:** {len(open_rows)} still open \u00b7 {len(recent_rows)} closed in the past 90 days"
-        f" \u00b7 {len(all_rows)} rows\n"
-        f"- **Still-open by deadline month:** {by_month_str}\n"
-        f"- **{ROBOT}** marks AI / agentic events (topics or conference name match the focus set).\n"
-        f"- **Note:** the source publishes only CFP deadlines, not opening dates;"
-        f" topics come from event tags (many small DevFests carry none)."
-        f" Confirm on the linked CFP page.\n"
-    )
-
-    body = (
-        "\n## How to update this report\n\n"
-        "This note is generated \u2014 see [INSTRUCTIONS.md](INSTRUCTIONS.md) in this folder for how to refresh it.\n"
-        f"\n## Upcoming CFPs ({len(open_rows)})\n\n"
-        f"{render_table(open_rows, focus_tags or set() )}\n"
-        f"\n## Closed in the past 90 days \u2014 check for extensions ({len(recent_rows)})\n\n"
-        f"{render_table(recent_rows, focus_tags or set() )}\n"
-    )
-
-    return frontmatter + header + body
+    cache_path: Path,
+    offline: bool = False,
+) -> list[dict]:
+    """Collect normalized note rows without writing any CFP notes."""
+    cfps = fetch_json(cache_path, "all-cfps.json", SRC_URLS["all-cfps.json"], offline)
+    events = fetch_json(cache_path, "all-events.json", SRC_URLS["all-events.json"], offline)
+    rows = []
+    for raw in build_rows(cfps, events, cutoff):
+        rows.append(
+            {
+                "name": raw["name"],
+                "event_date": event_date_start(raw["dates"]),
+                "location": raw["loc"],
+                "country": raw["country"],
+                "cfp_close": raw["close"].isoformat(),
+                "topics": raw["topics"],
+                "languages": raw["languages"],
+                "event_url": raw["event_url"],
+                "cfp_url": raw["cfp_url"],
+                "source": "developers.events",
+            }
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -526,7 +281,7 @@ def render_document(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build an Obsidian markdown report of open CFPs from developers.events.",
+        description="Write per-CFP Obsidian notes from developers.events.",
     )
     parser.add_argument(
         "--out",
@@ -541,8 +296,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--months-back",
         type=int,
-        default=3,
-        help="Deprecated: approximate window as 30×N days. Prefer --past-days N. (default: 1 → 30 days).",
+        default=1,
+        help="Approximate window as 30×N days. Prefer --past-days N. (default: 1).",
     )
     parser.add_argument(
         "--past-days",
@@ -551,21 +306,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         dest="past_days",
         help="Rolling window for 'recently closed' (default: 30 days). Overrides --months-back.",
-    )
-    parser.add_argument(
-        "--focus-tags",
-        default=",".join(FOCUS_TAGS),
-        help="Comma-separated focus topics; disables with --no-focus.",
-    )
-    parser.add_argument(
-        "--no-focus",
-        action="store_true",
-        help="Disable 🤖 AI/agentic marking entirely.",
-    )
-    parser.add_argument(
-        "--no-frontmatter",
-        action="store_true",
-        help="Omit Obsidian YAML frontmatter.",
     )
     parser.add_argument(
         "--cache",
@@ -578,10 +318,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Write the JSON list of note paths produced (relative to --out), for orphan detection.",
     )
     parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Do not save a timestamped backup of the previous output file.",
+        "--superseded-manifest",
+        default=None,
+        help="Write replaced note paths for collision-safe archive handling.",
     )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached responses; do not access the network.",
+    )
+    # Retired report options remain accepted through the shim's removal window.
+    parser.add_argument("--focus-tags", help=argparse.SUPPRESS)
+    for legacy in ("--no-focus", "--no-frontmatter", "--no-backup"):
+        parser.add_argument(legacy, action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -591,57 +340,23 @@ def main(argv: Optional[List[str]] = None) -> None:
     today = datetime.date.fromisoformat(args.today)
     cutoff = compute_cutoff(today, args.months_back, args.past_days)
 
-    cfps = fetch_json(args.cache, "all-cfps.json", SRC_URLS["all-cfps.json"])
-    events = fetch_json(args.cache, "all-events.json", SRC_URLS["all-events.json"])
-
-    rows = build_rows(cfps, events, cutoff)
-
-    focus_set: Set[str] = set()
-    if not args.no_focus:
-        raw = (args.focus_tags or "").strip()
-        focus_set = {t.strip() for t in raw.split(",") if t.strip()}
-
-    for row in rows:
-        row["focus"] = is_focus_row(row, focus_set)
-
-    # Upcoming includes CFPs closed in the past 30 days (extensions happen).
-    recent_cutoff = today - datetime.timedelta(days=30)
-    open_rows = [r for r in rows if r["close"] >= recent_cutoff]
-    recent_rows = [r for r in rows if r["close"] < recent_cutoff]
-    focus_open = sum(1 for r in open_rows if r.get("focus"))
-    focus_recent = sum(1 for r in recent_rows if r.get("focus"))
-
-    document = render_document(
-        today=today,
-        cutoff=cutoff,
-        open_rows=open_rows,
-        recent_rows=recent_rows,
-        all_rows=rows,
-        focus_tags=focus_set,
-        include_frontmatter=not args.no_frontmatter,
-    )
+    rows = collect_rows(cutoff, Path(args.cache), offline=args.offline)
 
     data_dir = Path(args.out).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
-
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from cfp_writer import upsert_counted, summary_line, write_manifest
+    from cfp_writer import emit_rows, summary_line
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for r in rows:
-        r.setdefault("source", "developers.events")
-        r.setdefault("event_date", event_date_start(r.get("dates") or []))
-        r.setdefault("cfp_close", r["close"].isoformat())
-        r.setdefault("location", r.get("loc", ""))
-        upsert_counted(data_dir, r, counts, produced)
-
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
-
-    # A "skipped" row is already covered by another note; count it as current.
-    print(summary_line("developers.events", len(rows), counts["new"], counts["updated"],
-                       counts["unchanged"] + counts["skipped"]))
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
+    print(summary_line(
+        "developers.events", len(rows), counts["new"], counts["updated"],
+        counts["unchanged"] + counts["skipped"],
+    ))
 
 
 

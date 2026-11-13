@@ -1,23 +1,47 @@
 # Manual input
 
 - Status: Implemented
-- Official/source URL(s): [local `input/` directory](../../input/)
-- Interface: sorted, nonrecursive [`input/*.md`](../../input/) Markdown tables; adapter [`src/process-manual-input.py`](../../src/process-manual-input.py)
-- Verification: 2026-11-11
+- Source: Personal files under `input/`
+- Adapter: [`src/process-manual-input.py`](../../src/process-manual-input.py)
+- Verification: 2026-11-12
 
 ## Data and access
 
-No network access is used. Each recognized row needs at least five columns: conference name/link, location, CFP open (ignored), CFP close, conference date, and optional comma-separated topics. Header/separator rows, empty names, solicitation text, and configured ignored-name matches are skipped. There is no recency filter or parser-level deduplication; input files and rows retain sorted-file/line order.
+`MANUAL_INPUT_FILES` lists the files to read. Relative paths must stay inside `input/`.
+A missing configured file aborts collection before note writes. An empty list produces no rows.
 
-## Caveats
+Two file shapes are supported:
 
-Only simple Markdown links and unescaped literal-pipe tables are supported. The first link's text becomes the clean event name and its destination the event URL; Google `/url?...&q=...` wrappers are unwrapped. `cfp_url` is always empty, country is not inferred from location, and a CFP opening value is discarded. Free-text dates can survive normalization, so not every manual note has an ISO deadline or event date. Ambiguous numeric dates try day/month before month/day (`03/04/2027` means 3 April 2027). Avoid literal `|` inside cells.
+- Markdown CFP tables.
+- Checklists with `- [Conference](https://event-url/)` bullets. `*` and `+` bullets also work.
 
-## Integration guidance
+Table parsing needs the expected CFP header and a separator row. Column names define the mapping.
+Reordered columns are supported. Unrelated tables are ignored. CFP-open values are discarded.
 
-Recognized close formats become ISO. For other values, `Unstated` slash components are removed and remaining free text retained; if none remain the result is `Unstated`, while originally empty input becomes `—`. Event ranges contribute their parsed start date when supported, otherwise source text remains. Topics split on commas. Manual has the **highest ownership priority**, wins same-path conflicts, and rewrites source-owned fields while the shared writer preserves notes, shortlist, submissions, and extra properties. Empty CFP URLs cannot participate in cross-path URL dedupe, so use accurate names and avoid duplicate manual rows. The full wrapper omits this source when its input directory is absent; the standalone command errors instead.
+Watchlists use live HTML fetches by default. The shared `--cache` directory stores fetched pages.
+A failed fetch uses a readable cached page. `--offline` requires cached pages. Watchlist discovery
+checks up to three ranked submission candidates. Generic speaker rosters are not CFP links.
+
+Explicitly closed submission pages are skipped. A dated close before `--today` is also skipped.
+A fetch failure aborts collection before note writes. An unknown close remains `Unstated`.
+
+## Normalization
+
+Recognized close formats become ISO dates. Other close text stays free text after removal of
+`Unstated` slash components. An unparseable event date becomes `TBA`. Topics split on commas.
+
+Table links supply event names and event URLs. Google `/url?...&q=...` wrappers are unwrapped.
+Watchlist pages can supply a submission URL and structured event metadata. Manual rows do not infer
+`country` from location. Empty submission URLs cannot participate in URL-based deduplication.
+
+Manual has the highest priority among current rows. The reconciler still preserves shortlist,
+dismissed, submissions, body notes, and custom properties across source changes.
+
+If the input directory is absent, the full wrapper treats manual as unavailable. Its existing notes
+stay live. The standalone command reports an error instead.
 
 ## Evidence
 
-- [Current curated input](../../input/gmail1.md) — real Markdown-table layout.
-- [Adapter](../../src/process-manual-input.py) — exact parsing, normalization, and mapping rules specified above.
+- [Current curated input](../../input/gmail1.md) — a real Markdown CFP table.
+- [Adapter](../../src/process-manual-input.py) — input selection and normalization.
+- [Watchlist resolver](../../src/watchlist.py) — candidate ranking and metadata extraction.

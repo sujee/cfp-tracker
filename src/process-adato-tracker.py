@@ -26,9 +26,10 @@ import argparse
 import datetime as _dt
 import re
 import sys
-import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
+
+from http_cache import fetch_text
 
 PAGE_URL = "https://adatosystems.com/cfp-tracker/"
 CACHE_NAME = "adato-tracker.html"  # cached page under --cache DIR
@@ -39,21 +40,16 @@ import config as _cfg
 _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
 
 
-def _fetch_page(cache_path: Path | None = None) -> str:
-    """The tracker page HTML, served from ``cache_path`` when already fetched."""
-    dest = cache_path / CACHE_NAME if cache_path else None
-    if dest is not None and dest.is_file():
-        try:
-            return dest.read_text(encoding="utf-8")
-        except OSError:
-            pass
-    req = urllib.request.Request(PAGE_URL, headers={"User-Agent": "cfp-merge/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        text = resp.read().decode("utf-8", errors="replace")
-    if dest is not None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text, encoding="utf-8")
-    return text
+def _fetch_page(cache_path: Path | None = None, offline: bool = False) -> str:
+    """Fetch tracker HTML through the shared online-first cache."""
+    return fetch_text(
+        PAGE_URL,
+        cache_path,
+        CACHE_NAME,
+        offline=offline,
+        source="adato-tracker",
+        validator=_validate_page,
+    )
 
 
 def _parse_date(s) -> _dt.date | None:
@@ -76,6 +72,7 @@ class _TrackerTableParser(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.rows: list[list[tuple[str, str | None]]] = []
+        self.found_table = False
         self._in_table = False
         self._in_row = False
         self._cells: list | None = None  # row in progress: list of [text chunks, href]
@@ -85,6 +82,7 @@ class _TrackerTableParser(HTMLParser):
         a = dict(attrs)
         if tag == "table":
             if not self._in_table and "tablesorter" in (a.get("class") or "").split():
+                self.found_table = True
                 self._in_table = True
             return
         if not self._in_table:
@@ -121,10 +119,31 @@ class _TrackerTableParser(HTMLParser):
 def _parse_rows(html: str) -> list[list[tuple[str, str | None]]]:
     parser = _TrackerTableParser()
     parser.feed(html)
+    parser.close()
+    if not parser.found_table:
+        raise ValueError("Adato tracker: expected a table with class 'tablesorter'")
     return parser.rows
 
 
-def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = None) -> list[dict]:
+def _validate_rows(rows) -> bool:
+    for cells in rows:
+        if cells and len(cells) != 8:
+            raise ValueError(
+                f"Adato tracker: expected 8 columns in a nonempty row, found {len(cells)}"
+            )
+    return True
+
+
+def _validate_page(html: str) -> bool:
+    return _validate_rows(_parse_rows(html))
+
+
+def collect_rows(
+    cutoff: _dt.date,
+    today: _dt.date,
+    cache_path: Path | None = None,
+    offline: bool = False,
+) -> list[dict]:
     """One row per tracker-table entry whose CFP deadline is on/after *cutoff*.
 
     Deduplication key is ``(normalized name, cfp_close)`` — the same conference
@@ -132,9 +151,9 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
     """
     rows: list[dict] = []
     seen = set()
-    for cells in _parse_rows(_fetch_page(cache_path)):
-        if len(cells) != 8:
-            continue
+    table_rows = _parse_rows(_fetch_page(cache_path, offline=offline))
+    _validate_rows(table_rows)
+    for cells in table_rows:
         name, city, state = (cells[i][0] for i in (0, 1, 2))
         start = _parse_date(cells[3][0])
         close = _parse_date(cells[5][0])
@@ -180,26 +199,33 @@ def main() -> int:
         default=str(Path(__file__).resolve().parent.parent / "cache"),
     )
     ap.add_argument("--manifest", default=None)
+    ap.add_argument("--superseded-manifest", default=None)
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only the cached response; do not access the network.",
+    )
     args = ap.parse_args()
 
     today = _dt.date.fromisoformat(args.today)
     cutoff = today - _dt.timedelta(days=30 * max(1, args.months_back))
 
-    rows = collect_rows(cutoff, today, Path(args.cache))
+    rows = [
+        {**row, "source": "adato-tracker"}
+        for row in collect_rows(cutoff, today, Path(args.cache), offline=args.offline)
+    ]
 
     data_dir = Path(args.out).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from cfp_writer import upsert_counted, summary_line, write_manifest
+    from cfp_writer import emit_rows, summary_line
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for r in rows:
-        row = {**r, "source": "adato-tracker"}
-        upsert_counted(data_dir, row, counts, produced)
-
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
 
     print(summary_line("adato-tracker", len(rows), counts["new"], counts["updated"],
                        counts["unchanged"] + counts["skipped"]))

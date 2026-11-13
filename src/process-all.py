@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
-import re
+import datetime
+import importlib.util
 import subprocess
 from collections import Counter
 import sys
-import tempfile
 from pathlib import Path
+
+from reconcile import reconcile_rows
+from sources import SOURCE_NAMES, RunContext, collect_source, cutoff_for
 
 BOLD = "\033[1m"
 RESET = "\033[0m"
@@ -22,19 +25,21 @@ def _style(text: str, code: str) -> str:
     return f"{code}{text}{RESET}" if _tty() else text
 
 
-def collect_summaries(output: str) -> list[dict]:
-    """Parse per-source ``summary_line`` rows emitted by each step."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    try:
-        from cfp_writer import SUMMARY_RE
-    except Exception:
-        return []
-    rows = []
-    for line in output.splitlines():
-        m = SUMMARY_RE.match(line.strip())
-        if m:
-            rows.append({k: (int(v) if k != "source" else v) for k, v in m.groupdict().items()})
-    return rows
+def _archive_orphans(data_dir: Path, archive_dir: Path, result, skipped_sources):
+    """Load the hyphenated archive CLI as a library for one planned move pass."""
+    path = Path(__file__).resolve().with_name("archive-orphans.py")
+    spec = importlib.util.spec_from_file_location("cfp_archive_orphans", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"could not load {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.archive_orphans(
+        data_dir,
+        archive_dir,
+        result.produced,
+        skip_sources=skipped_sources,
+        superseded=result.superseded,
+    )
 
 
 def included_event_types() -> set[str]:
@@ -45,17 +50,7 @@ def included_event_types() -> set[str]:
     return {event_type for event_type in EVENT_TYPES if _event_type_included(event_type)}
 
 
-# Canonical source name -> (script, manifest stem). Order mirrors
-# ``cfp_writer.SOURCE_PRIORITY`` so a run always processes sources in the same
-# order regardless of how config.INPUT_SOURCES is written.
-SOURCE_STEPS = {
-    "developers.events": ("process-developer-events.py", "dev"),
-    "cfp.ninja": ("process-cfp-ninja.py", "ninja"),
-    "confs.tech": ("process-confs-tech.py", "confs"),
-    "adato-tracker": ("process-adato-tracker.py", "adato"),
-    "open-tech-cfps": ("process-open-tech-cfps.py", "opentech"),
-    "manual": ("process-manual-input.py", "manual"),
-}
+# Source scripts, priorities, and collection live in sources.py.
 
 
 def selected_sources() -> list[str]:
@@ -69,7 +64,7 @@ def selected_sources() -> list[str]:
 
     configured = getattr(_cfg, "INPUT_SOURCES", None)
     if configured is None:
-        return list(SOURCE_STEPS)
+        return list(SOURCE_NAMES)
     if isinstance(configured, str) or not hasattr(configured, "__iter__"):
         raise ValueError("config.INPUT_SOURCES must be a list of source names")
     names: list[str] = []
@@ -77,10 +72,10 @@ def selected_sources() -> list[str]:
         if not isinstance(item, str) or not item.strip():
             raise ValueError("config.INPUT_SOURCES must contain nonempty source names")
         name = item.strip()
-        if name not in SOURCE_STEPS:
+        if name not in SOURCE_NAMES:
             raise ValueError(
                 f"Unknown config.INPUT_SOURCES value: {name!r}; "
-                f"choose from {', '.join(SOURCE_STEPS)}"
+                f"choose from {', '.join(SOURCE_NAMES)}"
             )
         if name not in names:
             names.append(name)
@@ -232,15 +227,32 @@ def print_summary(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Run all CFP processors.")
+    ap = argparse.ArgumentParser(description="Collect, reconcile, and archive CFP notes.")
     ap.add_argument("--out", default="data")
     ap.add_argument("--input", default="input")
     ap.add_argument(
         "--archive",
         default=None,
-        help="Folder for notes no source produces any more (default: 'archived' beside --out).",
+        help="Archive destination (default: 'archived' beside --out).",
     )
-    ap.add_argument("--no-archive", action="store_true", help="Do not archive orphan notes.")
+    ap.add_argument("--no-archive", action="store_true", help="Do not archive orphan or replaced notes.")
+    ap.add_argument("--today", default=datetime.date.today().isoformat())
+    ap.add_argument("--months-back", type=int, default=1)
+    ap.add_argument("--past-days", "--days-back", type=int, default=None, dest="past_days")
+    ap.add_argument(
+        "--cache",
+        default=str(Path(__file__).resolve().parent.parent / "cache"),
+        help="Shared HTTP cache directory.",
+    )
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached responses; do not access the network.",
+    )
+    # Accepted for compatibility with older wrapper commands. No report is built.
+    ap.add_argument("--focus-tags", help=argparse.SUPPRESS)
+    for legacy in ("--no-focus", "--no-frontmatter", "--no-backup"):
+        ap.add_argument(legacy, action="store_true", help=argparse.SUPPRESS)
     ap.add_argument(
         "--prestige",
         default=None,
@@ -249,72 +261,56 @@ def main() -> int:
     ap.add_argument(
         "--no-prestige", action="store_true", help="Do not stamp curated prestige tiers."
     )
-    args, rest = ap.parse_known_args()
-    included = included_event_types()  # Fail invalid config before notes or archives change.
-    selected = selected_sources()      # Same fail-first contract for INPUT_SOURCES.
-    skipped_sources = [name for name in SOURCE_STEPS if name not in selected]
+    args = ap.parse_args()
+    included = included_event_types()
+    selected = selected_sources()
+    skipped_sources = {name for name in SOURCE_NAMES if name not in selected}
 
     here = Path(__file__).resolve().parent
     data_dir = Path(args.out).resolve()
     input_dir = Path(args.input).resolve()
     archive_dir = Path(args.archive).resolve() if args.archive else data_dir.parent / "archived"
+    today = datetime.date.fromisoformat(args.today)
+    context = RunContext(
+        today=today,
+        cutoff=cutoff_for(today, args.months_back, args.past_days),
+        cache=Path(args.cache).resolve(),
+        input_dir=input_dir,
+        offline=args.offline,
+    )
 
-    summaries: list[dict] = []
-    archived = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        manifests: dict[str, Path] = {stem: tmp / f"{stem}.json" for _, stem in SOURCE_STEPS.values()}
+    available = []
+    for name in selected:
+        if name == "manual" and not input_dir.is_dir():
+            # Missing manual input is an unavailable source, not an empty source.
+            print(f"skipping {name}: input dir not found: {input_dir}")
+            skipped_sources.add(name)
+            continue
+        available.append(name)
 
-        steps = []
-        for name in selected:
-            script, stem = SOURCE_STEPS[name]
-            manifest = manifests[stem]
-            cmd = [
-                sys.executable, str(here / script),
-                "--out", str(data_dir), "--manifest", str(manifest),
-            ]
-            if name == "developers.events":
-                cmd += [*rest]
-            if name == "manual":
-                if not input_dir.is_dir():
-                    # A missing input dir is a normal state, not an error; nothing
-                    # will claim the manual manifest, so drop it from archiving.
-                    print(f"skipping {name}: input dir not found: {input_dir}")
-                    continue
-                cmd += ["--input", str(input_dir)]
-            steps.append(cmd)
+    rows_by_source = {}
+    for name in available:
+        print(f"> collecting {name}")
+        try:
+            rows_by_source[name] = collect_source(name, context)
+        except Exception as exc:
+            print(f"source failed before note writes: {name}: {exc}", file=sys.stderr)
+            return 1
 
-        for cmd in steps:
-            print(">", " ".join(cmd))
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            if proc.stdout:
-                print(proc.stdout, end="")
-            if proc.stderr:
-                print(proc.stderr, end="", file=sys.stderr)
-            if proc.returncode != 0:
-                print(f"step failed (exit {proc.returncode}): {cmd}", file=sys.stderr)
-                return proc.returncode
-            summaries.extend(collect_summaries(proc.stdout))
-
+    try:
+        result = reconcile_rows(
+            data_dir,
+            rows_by_source,
+            today=args.today,
+            skipped_sources=skipped_sources,
+        )
+        archived = 0
         if not args.no_archive and data_dir.is_dir():
-            cmd = [sys.executable, str(here / "archive-orphans.py"), "--data", str(data_dir),
-                   "--archive", str(archive_dir)]
-            for name in selected:
-                cmd += ["--manifest", str(manifests[SOURCE_STEPS[name][1]])]
-            # Notes owned by a skipped source are NOT orphans: the source was not
-            # asked to produce them this run, so they must stay in data/.
-            for name in skipped_sources:
-                cmd += ["--skip-source", name]
-            proc = subprocess.run(cmd, capture_output=True, text=True)
-            if proc.stdout:
-                print(proc.stdout, end="")
-            if proc.stderr:
-                print(proc.stderr, end="", file=sys.stderr)
-            if proc.returncode != 0:
-                print(f"step failed (exit {proc.returncode}): {cmd}", file=sys.stderr)
-                return proc.returncode
-            m = re.search(r"archive-orphans: \w+ (\d+) note", proc.stdout)
-            archived = int(m.group(1)) if m else 0
+            moved = _archive_orphans(data_dir, archive_dir, result, skipped_sources)
+            archived = len(moved)
+    except (OSError, ValueError) as exc:
+        print(f"refresh failed: {exc}", file=sys.stderr)
+        return 1
 
     # Curated ranking (prestige.md) -> `tier` on the matching notes. Runs last on
     # purpose: archiving has moved the orphans aside, and a refresh must never
@@ -336,7 +332,7 @@ def main() -> int:
             print(f"step failed (exit {proc.returncode}): {cmd}", file=sys.stderr)
             return proc.returncode
 
-    print_summary(summaries, data_dir, archived, archive_dir, included)
+    print_summary(result.summary_rows(), data_dir, archived, archive_dir, included)
     print("done")
     return 0
 

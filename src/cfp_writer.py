@@ -15,6 +15,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
@@ -165,15 +166,7 @@ LIST_FIELDS = ("topics", "benefits", "languages")
 # Lower index = higher priority. Several conferences appear in more than one
 # feed and map to the same slug; the lower-priority source must not overwrite the
 # note a higher-priority one already owns (they disagree on location/country/source).
-SOURCE_PRIORITY = {
-    "manual": 0,
-    "developers.events": 1,
-    "cfp.ninja": 2,
-    "confs.tech": 3,
-    # Derived aggregators fill gaps without overwriting richer sources.
-    "adato-tracker": 4,
-    "open-tech-cfps": 5,
-}
+from sources import SOURCE_PRIORITY
 
 
 def _source_priority(source: str) -> int:
@@ -233,8 +226,22 @@ def strip_utm(url) -> str:
 
 
 def _url_key(url) -> str:
-    """Normalise a CFP URL for cross-source matching (``""`` when absent)."""
-    return strip_utm(url).strip().rstrip("/").lower()
+    """Normalize scheme/host, trailing slash, and tracking tags for URL matching.
+
+    Paths, query values, and fragments can be case-sensitive and stay unchanged.
+    """
+    value = strip_utm(url).strip().rstrip("/")
+    if not value:
+        return ""
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return value
+    if not parts.scheme or not parts.netloc:
+        return value
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, parts.fragment)
+    )
 
 
 def _name_tokens(name) -> set:
@@ -328,8 +335,13 @@ KNOWN_FM_KEYS = {
     # validity (a missing/garbled stamp back-fills on the next refresh).
     "created",
     "updated",
+    # Relative paths whose curated state already moved into this note. This
+    # lineage prevents an unarchived predecessor from being merged repeatedly.
+    "replaces",
     # Legacy keys are consumed instead of preserved as user metadata. A migrated
-    # note must not keep a stale key next to its replacement.
+    # note must not keep a stale key next to its replacement. Frontmatter notes
+    # move into the body during a rewrite.
+    "notes",
     "name",
     "submission",
     "conf_date",
@@ -388,15 +400,15 @@ def _is_plain_safe(s: str, flow: bool = False) -> bool:
 # lossless.
 
 
-def _yaml_reads_as_non_string(s: str) -> bool:
+def _yaml_reads_as_non_string(s: str, allow_date: bool = False) -> bool:
     """True when YAML would read the plain scalar *s* as anything but a string.
 
     ``365``, ``2026``, ``1.0``, ``yes``/``on``, ``null`` and sexagesimals like
     ``1:30`` all resolve to int / float / bool / None, so they must be quoted or
     the value silently changes type — a topic ``365`` comes back from the note
-    as a number. ISO dates are exempt (see ``_ISO_DATE_RE``).
+    as a number. Only date-typed note properties exempt ISO dates.
     """
-    if _ISO_DATE_RE.fullmatch(s):
+    if allow_date and _ISO_DATE_RE.fullmatch(s):
         return False
     try:
         return not isinstance(yaml.safe_load(s), str)
@@ -404,20 +416,20 @@ def _yaml_reads_as_non_string(s: str) -> bool:
         return True
 
 
-def _yaml_str(value, flow: bool = False) -> str:
-    """Render *value* as a safe YAML scalar, quoting only when needed.
-
-    Quoted when the plain form would not read back as the same string: YAML
-    indicators, flow-collection characters, and anything YAML would resolve to
-    a number / bool / null (``365`` -> ``"365"``). ISO dates stay plain.
-    """
+def _yaml_str(value, flow: bool = False, allow_date: bool = False) -> str:
+    """Render *value* as a safe YAML scalar, quoting only when needed."""
     s = "" if value is None else str(value)
     if s == "":
         return '""'
-    if _is_plain_safe(s, flow=flow) and not _yaml_reads_as_non_string(s):
+    if _is_plain_safe(s, flow=flow) and not _yaml_reads_as_non_string(s, allow_date):
         return s
     # JSON double-quoted strings are valid YAML and escape newlines/quotes.
     return json.dumps(s, ensure_ascii=False)
+
+
+def _yaml_date(value) -> str:
+    """Render a date-typed note property without turning it into a string."""
+    return _yaml_str(value, allow_date=True)
 
 
 def _yaml_list(items) -> str:
@@ -483,7 +495,7 @@ _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 def _valid_iso_date(value) -> bool:
     """True when *value* is a non-empty ``YYYY-MM-DD`` stamp."""
-    return bool(_ISO_DATE_RE.match(_as_str(value)))
+    return bool(_ISO_DATE_RE.fullmatch(_as_str(value)))
 
 
 def _today_str(today=None) -> str:
@@ -522,6 +534,15 @@ def _extract_body_notes(body: str) -> str:
     return text
 
 
+def _body_and_legacy_notes(fm: dict, body: str) -> str:
+    """Combine body notes with legacy frontmatter notes without duplicating text."""
+    body_notes = _extract_body_notes(body)
+    legacy = _as_str(fm.get("notes")).strip()
+    if legacy and legacy != body_notes:
+        return "\n\n".join(part for part in (body_notes, legacy) if part)
+    return body_notes or legacy
+
+
 def parse_start_date(raw: str) -> str:
     """Return a conference's *starting* date as a clean ``YYYY-MM-DD``.
 
@@ -546,13 +567,17 @@ def parse_start_date(raw: str) -> str:
     return ""
 
 
-def slugify(name: str, close: str = "", event_date: str = "") -> str:
+def slugify(name: str, close: str = "", event_date: str = "", year_hint: str = "") -> str:
     base = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
     # Date prefix: prefer cfp_close, then event_date.
     date = (close or event_date or "")[:10]
     if not re.match(r"\d{4}-\d{2}-\d{2}", date):
-        # fall back to year
-        ym = re.search(r"(20\d{2})", name or "") or re.search(r"(20\d{2})", event_date or "")
+        # Fall back to year, including a legacy manual-input path hint.
+        ym = (
+            re.search(r"(20\d{2})", name or "")
+            or re.search(r"(20\d{2})", event_date or "")
+            or re.search(r"^(20\d{2})$", year_hint or "")
+        )
         date = ym.group(1) if ym else ""
     if date and base:
         return f"{date}_{base}"
@@ -593,15 +618,17 @@ def _read_frontmatter(path: Path) -> tuple[dict, str]:
     return _read_frontmatter_text(path.read_text(encoding="utf-8"))
 
 
-_TOP_FM_KEY_RE = re.compile(r"^[A-Za-z0-9_][\w.-]*\s*:")
+_TOP_FM_KEY_RE = re.compile(
+    r'^(?P<key>[A-Za-z0-9_][\w.-]*|"(?:[^"\\]|\\.)*"|\'(?:[^\']|\'\')*\')\s*:'
+)
 
 
 def _extra_frontmatter_lines(text: str) -> list[str]:
-    """Raw frontmatter lines for keys the writer does not own, preserved verbatim.
+    """Preserve unknown top-level properties and their complete YAML values.
 
-    Captures each unknown top-level key with any indented continuation lines
-    (block scalars, nested maps/lists) so user metadata survives a rewrite
-    without being re-quoted or reinterpreted. Known keys are skipped.
+    A value continues until the next top-level key. This includes indentation,
+    indentless sequences, and blank lines in block scalars. Quoted key names are
+    parsed with YAML before comparison with the writer-owned keys.
     """
     m = _FM_RE.match(text or "")
     if not m:
@@ -610,15 +637,15 @@ def _extra_frontmatter_lines(text: str) -> list[str]:
     capturing = False
     for line in m.group("fm").split("\n"):
         line = line.rstrip("\r")
-        if _TOP_FM_KEY_RE.match(line):
-            key = line.split(":", 1)[0].strip()
-            capturing = key not in KNOWN_FM_KEYS
-            if capturing:
-                out.append(line)
-        elif capturing and line[:1] in (" ", "\t"):
+        match = _TOP_FM_KEY_RE.match(line)
+        if match:
+            try:
+                key = yaml.safe_load(match.group("key"))
+            except yaml.YAMLError:
+                key = None
+            capturing = isinstance(key, str) and key not in KNOWN_FM_KEYS
+        if capturing:
             out.append(line)
-        else:
-            capturing = False
     return out
 
 
@@ -631,16 +658,17 @@ def _render(
     created: str,
     updated: str,
     extras: list[str] | None = None,
+    replaces: list[str] | None = None,
 ) -> str:
     fm = [
         "---",
         "type: cfp",
         f"event_name: {_yaml_str(row.get('name', ''))}",
-        f"event_date: {_yaml_str(row.get('event_date', ''))}",
+        f"event_date: {_yaml_date(row.get('event_date', ''))}",
         f"event_type: {_yaml_str(row.get('event_type', ''))}",
         f"location: {_yaml_str(row.get('location', ''))}",
         f"country: {_yaml_str(row.get('country', ''))}",
-        f"cfp_close: {_yaml_str(row.get('cfp_close', ''))}",
+        f"cfp_close: {_yaml_date(row.get('cfp_close', ''))}",
         f"topics: {_yaml_list(row.get('topics'))}",
     ]
     # ``benefits`` is written only when the source states any (cfp.ninja marks
@@ -660,9 +688,11 @@ def _render(
         f"shortlist: {shortlist}",
         f"dismissed: {dismissed}",
         f"submissions: {_yaml_list(submissions)}",
-        f"created: {_yaml_str(created)}",
-        f"updated: {_yaml_str(updated)}",
+        f"created: {_yaml_date(created)}",
+        f"updated: {_yaml_date(updated)}",
     ]
+    if replaces:
+        fm.append(f"replaces: {_yaml_list(replaces)}")
     fm.extend(extras or [])  # user metadata, preserved verbatim
     fm += [
         "---",
@@ -811,17 +841,38 @@ def _source_props_match(fm: dict, row: dict) -> bool:
 
 
 def note_path(data_dir: Path, row: dict) -> Path:
-    """Path for *row*'s note under *data_dir* (no directories created)."""
-    slug = slugify(row.get("name", ""), row.get("cfp_close", ""), row.get("event_date", ""))
+    """Path for *row*'s note under *data_dir* (no directories created).
+
+    ``_legacy_event_year`` is an internal hint for manual rows whose old
+    free-text event date produced a year-based path before schema normalization.
+    """
+    slug = slugify(
+        row.get("name", ""),
+        row.get("cfp_close", ""),
+        row.get("event_date", ""),
+        row.get("_legacy_event_year", ""),
+    )
     # Year subfolder based on cfp_close (or event_date).
     date = (row.get("cfp_close") or row.get("event_date") or "")[:4]
     if not (date.isdigit() and len(date) == 4):
         m = re.search(r"(20\d{2})", (row.get("event_date") or "") + (row.get("cfp_close") or ""))
         date = m.group(1) if m else "misc"
+    if date == "misc" and re.fullmatch(r"20\d{2}", row.get("_legacy_event_year") or ""):
+        date = row["_legacy_event_year"]
     return data_dir / date / f"{slug}.md"
 
 
-def upsert(data_dir: Path, row: dict, today=None) -> str:
+def upsert(
+    data_dir: Path,
+    row: dict,
+    today=None,
+    *,
+    previous_path: Path | None = None,
+    target_path: Path | None = None,
+    deduplicate: bool = True,
+    allow_source_takeover: bool = False,
+    resolved_event_type: str | None = None,
+) -> str:
     """Write/refresh one note; return ``"new"``, ``"updated"``, ``"unchanged"`` or ``"skipped"``.
 
     ``"unchanged"`` means the note is current — every source-derived property
@@ -871,14 +922,16 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
         "cfp_url": strip_utm(row.get("cfp_url")),
         "event_url": strip_utm(row.get("event_url")),
     }
-    path = note_path(data_dir, row)
+    path = target_path or note_path(data_dir, row)
+    previous_path = Path(previous_path) if previous_path is not None else path
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Preserve user-curated frontmatter fields and body notes from the existing file.
+    # Preserve user-curated state from an explicitly matched predecessor when
+    # reconciliation changes the note path or the owning source.
     existing = ""
-    if path.is_file():
+    if previous_path.is_file():
         try:
-            existing = path.read_text(encoding="utf-8")
+            existing = previous_path.read_text(encoding="utf-8")
         except OSError:
             existing = ""
     try:
@@ -891,7 +944,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     # infer it only when absent. Like missing stamps, a missing type back-fills
     # on the next refresh without advancing a valid ``updated`` stamp.
     event_type_set = bool(_as_str(fm.get("event_type")).strip())
-    row["event_type"] = _event_type_for(fm, row)
+    row["event_type"] = resolved_event_type or _event_type_for(fm, row)
     if not _event_type_included(row["event_type"]):
         # Excluded types never enter the live CFP tree. A skipped row is absent
         # from the manifest, so the refresh archives an existing note as-is.
@@ -905,7 +958,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     # skipped too, not just one that has not been created yet.
     key = _url_key(row.get("cfp_url"))
     incoming_priority = _source_priority(row.get("source", ""))
-    if key:
+    if key and deduplicate:
         for owner_path, owner_source, owner_name in _cfp_url_index(data_dir).get(key, ()):
             if owner_path == path:
                 continue
@@ -935,18 +988,20 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     props_match = _source_props_match(fm, row)
     if (
         props_match
+        and previous_path == path
         and "name" not in fm
         and event_type_set
         and "dismissed" in fm
         and _valid_iso_date(fm.get("created"))
         and _valid_iso_date(fm.get("updated"))
+        and path.relative_to(data_dir).as_posix() not in _as_list(fm.get("replaces"))
     ):
         return "unchanged"
 
     # A note another (higher-priority) source already owns is left as-is. The
     # feeds overlap on some conferences, so without this both write the same slug
     # every run and the lower-priority source's version wins the last write.
-    if existing:
+    if existing and not allow_source_takeover:
         owner = _as_str(fm.get("source"))
         if _source_priority(owner) < _source_priority(row.get("source", "")):
             return "skipped"
@@ -954,7 +1009,7 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
     dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
-    notes = _extract_body_notes(body)
+    notes = _body_and_legacy_notes(fm, body)
     extras = _extra_frontmatter_lines(existing)
 
     today_iso = _today_str(today)
@@ -972,20 +1027,43 @@ def upsert(data_dir: Path, row: dict, today=None) -> str:
         # ``updated`` starts equal to its ``created``.
         updated = created
 
+    replaces = _as_list(fm.get("replaces"))
+    if previous_path != path and previous_path.is_file():
+        replaces = _merge_list(
+            replaces, [previous_path.relative_to(data_dir).as_posix()]
+        )
+    replaces = [
+        rel for rel in replaces if rel != path.relative_to(data_dir).as_posix()
+    ]
     status = _write_if_changed(
         path,
-        _render(row, shortlist, dismissed, submissions, notes, created, updated, extras),
+        _render(
+            row,
+            shortlist,
+            dismissed,
+            submissions,
+            notes,
+            created,
+            updated,
+            extras,
+            replaces,
+        ),
     )
-    if key:
+    if key and deduplicate:
         # Keep the in-process index current so a later row for the same URL sees
-        # the note this run just wrote.
-        _cfp_url_index(data_dir).setdefault(key, []).append(
+        # the note this run just wrote. A replaced path no longer owns the URL.
+        index = _cfp_url_index(data_dir)
+        if previous_path != path and key in index:
+            index[key] = [entry for entry in index[key] if entry[0] != previous_path]
+        index.setdefault(key, []).append(
             (path, _as_str(row.get("source")), _as_str(row.get("name")))
         )
+    if previous_path != path and previous_path.is_file() and status == "new":
+        return "updated"
     return status
 
 
-def upsert_counted(data_dir: Path, row: dict, counts: dict, produced: list) -> str:
+def upsert_counted(data_dir: Path, row: dict, counts: dict, produced: list, today=None) -> str:
     """Run :func:`upsert` and fold the result into a parser's counters.
 
     Increments ``counts[status]`` and, unless the status is ``"skipped"``,
@@ -994,11 +1072,201 @@ def upsert_counted(data_dir: Path, row: dict, counts: dict, produced: list) -> s
     another note, so it must **not** claim its own path, or the note it yields to
     would keep the loser alive as an un-archivable duplicate.
     """
-    status = upsert(data_dir, row)
+    status = upsert(data_dir, row, today=today)
     counts[status] = counts.get(status, 0) + 1
     if status != "skipped":
         produced.append(note_path(data_dir, row))
     return status
+
+
+def emit_rows(
+    data_dir: Path,
+    rows,
+    *,
+    manifest: Path | None = None,
+    superseded_manifest: Path | None = None,
+    today=None,
+) -> dict[str, int]:
+    """Write normalized rows and return counters shared by standalone adapters."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    rows_by_source = {}
+    for row in rows:
+        rows_by_source.setdefault(_as_str(row.get("source")), []).append(row)
+    from reconcile import reconcile_rows
+
+    result = reconcile_rows(
+        data_dir,
+        rows_by_source,
+        today=today,
+        skipped_sources=set(SOURCE_PRIORITY) - set(rows_by_source),
+    )
+    counts = {"found": 0, "new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
+    for source_counts in result.summaries.values():
+        for key in counts:
+            counts[key] += source_counts[key]
+    if manifest:
+        write_manifest(
+            Path(manifest), [data_dir / rel for rel in result.produced], data_dir
+        )
+    if superseded_manifest:
+        write_manifest(
+            Path(superseded_manifest),
+            [data_dir / rel for rel in result.superseded],
+            data_dir,
+        )
+    return counts
+
+
+def _row_from_frontmatter(fm: dict) -> dict:
+    """Build the renderable source-row subset from an existing CFP note."""
+    row = {key: _as_str(fm.get(key)) for key in SOURCE_SCALAR_FIELDS if key != "event_name"}
+    row["name"] = _event_name(fm)
+    if not row["event_date"] and "conf_date" in fm:
+        row["event_date"] = _as_str(fm.get("conf_date"))
+    row["topics"] = _as_list(fm.get("topics"))
+    row["benefits"] = _as_list(fm.get("benefits"))
+    row["languages"] = _casefold_list(fm.get("languages"))
+    row["event_type"] = _event_type_for(fm, row)
+    row["country"] = normalize_country(row.get("country"))
+    row["cfp_url"] = strip_utm(row.get("cfp_url"))
+    row["event_url"] = strip_utm(row.get("event_url"))
+    return row
+
+
+def prune_lineage_reference(path: Path, target_rel: str) -> str:
+    """Remove a backward reference to *target_rel* from a superseded note.
+
+    Reusing an earlier filename must not leave two live notes pointing at one
+    another as replaced ancestors. Other fields and source timestamps stay as-is.
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    fm, body = _read_frontmatter_text(text)
+    replaces = _as_list(fm.get("replaces"))
+    if target_rel not in replaces:
+        return "unchanged"
+    row = _row_from_frontmatter(fm)
+    replacements = [rel for rel in replaces if rel != target_rel]
+    return _write_if_changed(
+        path,
+        _render(
+            row,
+            "true" if _as_bool(fm.get("shortlist")) else "false",
+            "true" if _as_bool(fm.get("dismissed")) else "false",
+            _read_submissions(fm),
+            _body_and_legacy_notes(fm, body),
+            _as_str(fm.get("created")),
+            _as_str(fm.get("updated")),
+            _extra_frontmatter_lines(text),
+            replacements,
+        ),
+    )
+
+
+def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
+    """Merge user state from predecessor notes into an already reconciled note.
+
+    Source fields and conflicting metadata values in the live target win. Lists,
+    flags, submissions, body notes, and previously missing custom properties are
+    combined. Repeated merges are unchanged and never advance source timestamps.
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    fm, body = _read_frontmatter_text(text)
+    if _as_str(fm.get("type")) != "cfp":
+        return "unchanged"
+
+    row = _row_from_frontmatter(fm)
+    shortlist = _as_bool(fm.get("shortlist"))
+    dismissed = _as_bool(fm.get("dismissed"))
+    submissions = _read_submissions(fm)
+    notes = _body_and_legacy_notes(fm, body)
+    extras = {key: value for key, value in fm.items() if key not in KNOWN_FM_KEYS}
+    created = _as_str(fm.get("created"))
+    updated = _as_str(fm.get("updated"))
+    replaces = _as_list(fm.get("replaces"))
+    original = (
+        list(row["topics"]),
+        list(row["languages"]),
+        shortlist,
+        dismissed,
+        list(submissions),
+        notes,
+        dict(extras),
+        created,
+        list(replaces),
+    )
+
+    for predecessor in predecessors:
+        predecessor = Path(predecessor)
+        predecessor_rel = predecessor.relative_to(data_dir).as_posix()
+        if predecessor_rel in replaces:
+            continue  # One-time migration even when archiving was disabled.
+        predecessor_fm, predecessor_body = _read_frontmatter(predecessor)
+        if _as_str(predecessor_fm.get("type")) != "cfp":
+            continue
+        replaces = _merge_list(
+            replaces,
+            [*_as_list(predecessor_fm.get("replaces")), predecessor_rel],
+        )
+        row["topics"] = _merge_list(row["topics"], _as_list(predecessor_fm.get("topics")))
+        row["languages"] = _merge_list(
+            row["languages"], _casefold_list(predecessor_fm.get("languages"))
+        )
+        shortlist = shortlist or _as_bool(predecessor_fm.get("shortlist"))
+        dismissed = dismissed or _as_bool(predecessor_fm.get("dismissed"))
+        submissions = _merge_list(submissions, _read_submissions(predecessor_fm))
+        previous_notes = _body_and_legacy_notes(predecessor_fm, predecessor_body)
+        if previous_notes and previous_notes not in notes:
+            notes = "\n\n".join(part for part in (notes, previous_notes) if part)
+        for key, value in predecessor_fm.items():
+            if key not in KNOWN_FM_KEYS:
+                extras.setdefault(key, value)
+        previous_created = _as_str(predecessor_fm.get("created"))
+        if _valid_iso_date(previous_created):
+            created = min(created, previous_created) if _valid_iso_date(created) else previous_created
+
+    replaces = [
+        rel for rel in replaces if rel != path.relative_to(data_dir).as_posix()
+    ]
+    current = (
+        row["topics"],
+        row["languages"],
+        shortlist,
+        dismissed,
+        submissions,
+        notes,
+        extras,
+        created,
+        replaces,
+    )
+    if current == original:
+        return "unchanged"
+    if not _valid_iso_date(updated):
+        updated = created
+    extra_lines = []
+    if extras:
+        rendered = yaml.safe_dump(
+            extras,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
+        extra_lines = rendered.rstrip("\n").split("\n")
+    return _write_if_changed(
+        path,
+        _render(
+            row,
+            "true" if shortlist else "false",
+            "true" if dismissed else "false",
+            submissions,
+            notes,
+            created,
+            updated,
+            extra_lines,
+            replaces,
+        ),
+    )
 
 
 def normalize_file(path: Path, today=None) -> bool:
@@ -1013,29 +1281,19 @@ def normalize_file(path: Path, today=None) -> bool:
     False when there is no frontmatter block or the
     block is not valid YAML.
     """
+    text = path.read_text(encoding="utf-8")
     try:
-        fm, body = _read_frontmatter(path)
+        fm, body = _read_frontmatter_text(text)
     except FrontmatterError:
         print(f"cfp-writer: skipping note with unparseable frontmatter: {path}", file=sys.stderr)
         return False
-    if not fm:
+    if not fm or _as_str(fm.get("type")) != "cfp":
         return False
-    text = path.read_text(encoding="utf-8")
-    row = {k: _as_str(fm.get(k)) for k in SOURCE_SCALAR_FIELDS if k != "event_name"}
-    row["name"] = _event_name(fm)
-    if not row["event_date"] and "conf_date" in fm:  # legacy key rename
-        row["event_date"] = _as_str(fm.get("conf_date"))
-    row["topics"] = _as_list(fm.get("topics"))
-    row["benefits"] = _as_list(fm.get("benefits"))
-    row["languages"] = _casefold_list(fm.get("languages"))
-    row["event_type"] = _event_type_for(fm, row)
-    row["country"] = normalize_country(row.get("country"))
-    row["cfp_url"] = strip_utm(row.get("cfp_url"))
-    row["event_url"] = strip_utm(row.get("event_url"))
+    row = _row_from_frontmatter(fm)
     shortlist = "true" if _as_bool(fm.get("shortlist")) else "false"
     dismissed = "true" if _as_bool(fm.get("dismissed")) else "false"
     submissions = _read_submissions(fm)
-    notes = _extract_body_notes(body)
+    notes = _body_and_legacy_notes(fm, body)
     extras = _extra_frontmatter_lines(text)
     created = _as_str(fm.get("created"))
     updated = _as_str(fm.get("updated"))
@@ -1046,6 +1304,16 @@ def normalize_file(path: Path, today=None) -> bool:
         updated = created
     _write_if_changed(
         path,
-        _render(row, shortlist, dismissed, submissions, notes, created, updated, extras),
+        _render(
+            row,
+            shortlist,
+            dismissed,
+            submissions,
+            notes,
+            created,
+            updated,
+            extras,
+            _as_list(fm.get("replaces")),
+        ),
     )
     return True

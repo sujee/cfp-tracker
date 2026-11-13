@@ -9,7 +9,7 @@ python3 src/apply-prestige.py --check   # per-row match counts, writes nothing
 
 Notes matching **no row** keep their hand-set tier (so you can rank a one-off directly).
 
-`keywords` is a comma-separated list of alternatives — a row matches when any phrase appears in the `event_name` (case- and punctuation-insensitive; a trailing year may be glued on, e.g. `SREcon27`). Lowest tier wins when several rows match. Add per-edition keywords for non-year suffixes (`scale 24x`, not `scale`). Rows that list flagships no feed carries (re:Invent, Google I/O, NeurIPS, …) legitimately match nothing until one appears in `input/*.md`; `--check` surfaces both those and typo'd keywords.
+`keywords` is a comma-separated list of alternatives — a row matches when any phrase appears in the `event_name` (case- and punctuation-insensitive; a trailing year may be glued on, e.g. `SREcon27`). Lowest tier wins when several rows match. Add per-edition keywords for non-year suffixes (`scale 24x`, not `scale`). Rows that list flagships no feed carries (re:Invent, Google I/O, NeurIPS, …) legitimately match nothing until one appears in a file named in `MANUAL_INPUT_FILES`; `--check` surfaces both those and typo'd keywords.
 
 ## Rankings
 

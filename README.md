@@ -36,7 +36,7 @@ cp src/config_local.example.py src/config_local.py
 
 ### 2 - Python setup
 
-With uv (recomemnded)
+With uv (recommended)
 
 ```bash
 uv sync
@@ -45,7 +45,7 @@ uv sync
 Without uv
 
 ```
-python -m venv
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -84,20 +84,30 @@ That's it!
 **Option 2: To run the pipeline yourself:**
 
 ```bash
-# dry run
-uv run python src/process-all.py --out /tmp/cfp-scratch
+# Write notes outside the vault for an isolated check.
+uv run python src/process-all.py --out /tmp/cfp-scratch --no-archive
 
 # Refresh the notes in your vault.
 uv run python src/process-all.py
+
+# Reproduce a run from cached source responses.
+uv run python src/process-all.py --offline --today 2026-11-02
 ```
 
-The run prints a summary for each source. It also prints an event-type matrix. Use
-`uv run python src/process-all.py --help` to see all options.
+The run prints a summary for each source. It also prints an event-type matrix.
+
+The pipeline collects every enabled source before it writes notes. A source error stops the run before note changes. The reconciler migrates curated fields when a note changes its path or source. Archive moves never overwrite existing archived notes.
+
+Live fetches update the cache. A failed fetch uses a valid cached response. `--offline` requires cached responses and disables network access. Shared filters and dates apply to every source.
+
+Use `uv run python src/process-all.py --help` to see all options.
 
 ## Browse in Obsidian
 
 Copy [`cfps.base`](cfps.base) into your vault. Copy
 [`cfps-dashboard.md`](cfps-dashboard.md) too if you want summary tables.
+
+The base requires Obsidian Bases. The dashboard requires the Dataview plugin.
 
 The base reads notes from `data/`. The archive views read notes from `archived/`. If your notes use
 different folders, update the paths in both files.
@@ -146,4 +156,5 @@ Project details:
 
 - [`INSTRUCTIONS.md`](INSTRUCTIONS.md): refresh procedure and operating rules.
 - [`AGENTS.md`](AGENTS.md): data shapes, configuration, and preservation rules.
-- [`docs/spec.md`](docs/spec.md): detailed pipeline specification.
+- [`docs/spec.md`](docs/spec.md): historical specification from 2026-11-09.
+  Use `INSTRUCTIONS.md` and `AGENTS.md` for current behavior.

@@ -13,11 +13,14 @@ on the site itself, by ``src/watchlist.py``). Every other row is still ignored.
 from __future__ import annotations
 
 import argparse
+import datetime
 import re
 import sys
 from pathlib import Path
 from urllib.parse import unquote
 
+import cfp_writer
+from cfp_writer import parse_start_date
 import watchlist
 
 # Markdown link in a table cell: ``[text](url)`` (optional title).
@@ -60,7 +63,7 @@ def _normalize_close(raw: str) -> str:
         return "—"
     for fmt in _CLOSE_FORMATS:
         try:
-            return __import__("datetime").datetime.strptime(raw, fmt).date().isoformat()
+            return datetime.datetime.strptime(raw, fmt).date().isoformat()
         except ValueError:
             continue
     # No exact date: drop "Unstated" qualifiers, e.g. "Dec 2026 / Unstated" -> "Dec 2026".
@@ -70,39 +73,122 @@ def _normalize_close(raw: str) -> str:
     text = " / ".join(parts)
     for fmt in _CLOSE_FORMATS:
         try:
-            return __import__("datetime").datetime.strptime(text, fmt).date().isoformat()
+            return datetime.datetime.strptime(text, fmt).date().isoformat()
         except ValueError:
             continue
     return text
 
 
+def _table_cells(line: str) -> list[str] | None:
+    """Split one pipe-table line, or return ``None`` for ordinary Markdown."""
+    if not line.strip().startswith("|"):
+        return None
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _header_label(raw: str) -> str:
+    """Normalize a header cell for exact, punctuation-insensitive matching."""
+    label = _EMPH_RE.sub("", raw).lower()
+    return " ".join(re.split(r"[^a-z0-9]+", label)).strip()
+
+
+def _cfp_columns(header: list[str]) -> dict[str, int] | None:
+    """Map a real manual CFP header to its columns, in any column order."""
+    aliases = {
+        "name": {"conf name", "conference name", "event name"},
+        "location": {"conf location", "conference location", "event location", "location"},
+        "open": {"cfp open", "cfp opens", "cfp opening"},
+        "close": {"cfp close", "cfp closes", "cfp closing", "cfp deadline"},
+        "event_date": {
+            "conference date", "conference dates", "event date", "event dates",
+        },
+        "topics": {
+            "conference topic", "conference topics", "event topic", "event topics",
+            "topic", "topics",
+        },
+    }
+    labels = [_header_label(cell) for cell in header]
+    columns = {}
+    for field, choices in aliases.items():
+        matches = [index for index, label in enumerate(labels) if label in choices]
+        if len(matches) > 1:
+            return None
+        if matches:
+            columns[field] = matches[0]
+    required = {"name", "location", "open", "close", "event_date"}
+    return columns if required.issubset(columns) else None
+
+
+def _is_separator_row(cells: list[str], width: int) -> bool:
+    """Recognize the delimiter that must follow a manual CFP table header."""
+    return len(cells) == width and all(
+        re.fullmatch(r":?-+:?", cell.replace(" ", "")) for cell in cells
+    )
+
+
+def _cell(cells: list[str], columns: dict[str, int], field: str) -> str:
+    index = columns.get(field)
+    return cells[index] if index is not None and index < len(cells) else ""
+
+
 def parse_rows(text: str) -> list[dict]:
+    """Read rows only from Markdown tables with the manual CFP header.
+
+    Requiring the five known fields and their delimiter prevents other wide
+    tables (including prestige and rubric tables) from becoming CFP notes.
+    """
     rows = []
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import config as _cfg
 
     _IGNORE = [t.lower() for t in getattr(_cfg, "IGNORE_TOPICS", [])]
+    lines = text.splitlines()
+    index = 0
+    while index < len(lines):
+        header = _table_cells(lines[index])
+        if header is None:
+            index += 1
+            continue
+        block = []
+        while index < len(lines):
+            cells = _table_cells(lines[index])
+            if cells is None:
+                break
+            block.append(cells)
+            index += 1
 
-    for line in text.splitlines():
-        if line.strip().startswith("|"):
-            cols = [c.strip() for c in line.strip().strip("|").split("|")]
-            if len(cols) >= 5 and not cols[0].lower().startswith("conf name") and not set(cols[0]) <= set("-: "):
-                name, url = _clean_name(cols[0])
-                if not name or "would you like" in name.lower():
-                    continue
-                if any(t in name.lower() for t in _IGNORE):
-                    continue
-                rows.append(
-                    {
-                        "name": name,
-                        "location": cols[1],
-                        "cfp_close": _normalize_close(cols[3]),
-                        "event_date": cols[4],
-                        "topics": cols[5] if len(cols) > 5 else "",
-                        "event_url": _unwrap_url(url),
-                        "cfp_url": "",
-                    }
-                )
+        columns = _cfp_columns(block[0])
+        if (
+            columns is None
+            or len(block) < 2
+            or not _is_separator_row(block[1], len(block[0]))
+        ):
+            continue
+        required_fields = ("name", "location", "open", "close", "event_date")
+        required_width = max(columns[field] for field in required_fields)
+        for cells in block[2:]:
+            if (
+                len(cells) <= required_width
+                or _cfp_columns(cells) is not None
+                or _is_separator_row(cells, len(cells))
+            ):
+                continue
+            name, url = _clean_name(_cell(cells, columns, "name"))
+            if not name or "would you like" in name.lower():
+                continue
+            if any(t in name.lower() for t in _IGNORE):
+                continue
+            rows.append(
+                {
+                    "name": name,
+                    "location": _cell(cells, columns, "location"),
+                    "cfp_close": _normalize_close(_cell(cells, columns, "close")),
+                    "event_date": _cell(cells, columns, "event_date"),
+                    "topics": _cell(cells, columns, "topics"),
+                    "event_url": _unwrap_url(url),
+                    "cfp_url": "",
+                }
+            )
     return rows
 
 
@@ -146,69 +232,87 @@ def manual_input_files(input_dir: Path) -> list[Path]:
     return files
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="data")
-    ap.add_argument("--input", default="input")
-    ap.add_argument("--manifest", default=None)
-    ap.add_argument(
-        "--cache", default=None,
-        help="Optional fetched-HTML cache for watchlists (default: fetch live).",
-    )
-    ap.add_argument(
-        "--today", default=None,
-        help="YYYY-MM-DD cutoff for watchlist CFP closes (default: today's date).",
-    )
-    args = ap.parse_args()
-    if args.today:
-        import datetime
-
-        try:
-            datetime.date.fromisoformat(args.today)
-        except ValueError:
-            print(f"manual input: --today must be YYYY-MM-DD, got {args.today!r}", file=sys.stderr)
-            return 1
-
-    base = Path(".").resolve()
-    input_dir = (base / args.input).resolve()
-    data_dir = (base / args.out).resolve()
-
-    if not input_dir.is_dir():
-        print(f"input directory not found: {input_dir}", file=sys.stderr)
-        return 1
-
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from cfp_writer import upsert_counted, parse_start_date, summary_line, write_manifest
-
+def _normalize_event_date(raw: str) -> str:
+    """Return a valid ISO start date, or ``TBA`` for unknown source text."""
+    parsed = parse_start_date(raw)
+    if not parsed:
+        return "TBA"
     try:
-        files = manual_input_files(input_dir)
-    except (ValueError, FileNotFoundError) as exc:
-        print(f"manual input: {exc}", file=sys.stderr)
-        return 1
+        datetime.date.fromisoformat(parsed)
+    except ValueError:
+        return "TBA"
+    return parsed
+
+
+# ``_legacy_event_year`` is an in-memory path hint. It never reaches frontmatter.
+# ``cfp_writer.note_path`` uses it to keep year-derived legacy manual paths.
+
+
+def _normalize_row(row: dict) -> dict:
+    """Convert a table or watchlist result to the common writer row shape."""
+    raw_event_date = str(row.get("event_date") or "").strip()
+    event_date = _normalize_event_date(raw_event_date)
+    normalized = {
+        "name": row.get("name", ""),
+        "event_date": event_date,
+        "location": row.get("location") or "—",
+        "country": "",
+        "cfp_close": row.get("cfp_close") or "—",
+        "topics": [t.strip() for t in (row.get("topics") or "").split(",") if t.strip()],
+        "event_url": row.get("event_url", ""),
+        "cfp_url": row.get("cfp_url", ""),
+        "source": "manual",
+    }
+    legacy_year = re.search(r"20\d{2}", raw_event_date) if event_date == "TBA" else None
+    if legacy_year:
+        normalized["_legacy_event_year"] = legacy_year.group(0)
+    return normalized
+
+
+def collect_rows(
+    input_dir: Path,
+    cache: Path | None = None,
+    today=None,
+    offline: bool = False,
+) -> list[dict]:
+    """Collect fully normalized manual rows without writing any CFP notes.
+
+    Configuration, source-read, and fatal watchlist-fetch failures raise an
+    exception. No note writer runs, so a failed collection cannot produce a
+    partial manifest or cause existing notes to be archived.
+    """
+    input_dir = Path(input_dir)
+    cache = Path(cache) if cache is not None else None
+    if today is not None and not isinstance(today, datetime.date):
+        try:
+            datetime.date.fromisoformat(str(today))
+        except ValueError as exc:
+            raise ValueError(f"today must be YYYY-MM-DD, got {today!r}") from exc
+    if not input_dir.is_dir():
+        raise FileNotFoundError(f"input directory not found: {input_dir}")
 
     rows = []
     checked = []
-    for md in files:
-        text = md.read_text(encoding="utf-8")
+    for md in manual_input_files(input_dir):
+        try:
+            text = md.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise RuntimeError(f"could not read manual input file {md}: {exc}") from exc
         rows.extend(parse_rows(text))
         checked.extend(watchlist.parse_entries(text))
 
-    # A watchlist is not a table: the list supplies only conference names and
-    # sites, and their submission pages supply the details. If every site asks
-    # to sign up rather than to present, that is reported but not treated as a
-    # found CFP. A fetch failure stops the source with a clean message so an
-    # incomplete manifest cannot orphan yesterday's notes during archiving.
-    cache = (base / args.cache).resolve() if args.cache else None
+    # Resolve every checklist before returning any rows. A failed page is
+    # different from a page with no CFP: the former aborts note generation.
     watch_found = 0
-    failed = 0
+    failures = []
     for entry in checked:
-        result = watchlist.resolve(entry, cache=cache, today=args.today)
+        result = watchlist.resolve(entry, cache=cache, today=today, offline=offline)
         if result.error:
-            failed += int(result.failed)
-            print(
-                f"manual input: {entry['name']}: CFP unresolved ({result.error})",
-                file=sys.stderr,
-            )
+            message = f"{entry['name']}: CFP unresolved ({result.error})"
+            if result.failed:
+                failures.append(message)
+            else:
+                print(f"manual input: {message}", file=sys.stderr)
             continue
         watch_found += 1
         print(f"manual input: {entry['name']} -> {result.cfp_url}")
@@ -223,34 +327,67 @@ def main() -> int:
                 "cfp_url": result.cfp_url,
             }
         )
-    if failed:
-        print(
-            f"manual input: {failed} watchlist page(s) could not be fetched; "
-            "aborting before writing notes so existing notes are not orphaned",
-            file=sys.stderr,
+    if failures:
+        details = "; ".join(failures)
+        raise RuntimeError(
+            f"{len(failures)} watchlist page(s) could not be fetched; "
+            "aborting before writing notes so existing notes are not orphaned: "
+            f"{details}"
         )
-        return 1
     if checked:
         print(f"watchlist: {watch_found} CFP link(s) found, {len(checked) - watch_found} unresolved")
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for r in rows:
-        row = {
-            "name": r["name"],
-            "event_date": parse_start_date(r["event_date"]) or r["event_date"] or "—",
-            "location": r["location"] or "—",
-            "country": "",
-            "cfp_close": r["cfp_close"] or "—",
-            "topics": [t.strip() for t in (r["topics"] or "").split(",") if t.strip()],
-            "event_url": r["event_url"],
-            "cfp_url": r["cfp_url"],
-            "source": "manual",
-        }
-        upsert_counted(data_dir, row, counts, produced)
+    return [_normalize_row(row) for row in rows]
 
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default="data")
+    ap.add_argument("--input", default="input")
+    ap.add_argument("--manifest", default=None)
+    ap.add_argument("--superseded-manifest", default=None)
+    ap.add_argument(
+        "--cache", default=None,
+        help="Optional fetched-HTML cache for watchlists (default: fetch live).",
+    )
+    ap.add_argument(
+        "--today", default=None,
+        help="YYYY-MM-DD cutoff for watchlist CFP closes (default: today's date).",
+    )
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached watchlist pages; do not access the network.",
+    )
+    args = ap.parse_args()
+    if args.today:
+        try:
+            datetime.date.fromisoformat(args.today)
+        except ValueError:
+            print(f"manual input: --today must be YYYY-MM-DD, got {args.today!r}", file=sys.stderr)
+            return 1
+
+    base = Path(".").resolve()
+    input_dir = (base / args.input).resolve()
+    data_dir = (base / args.out).resolve()
+    cache = (base / args.cache).resolve() if args.cache else None
+
+    try:
+        rows = collect_rows(input_dir, cache=cache, today=args.today, offline=args.offline)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"manual input: {exc}", file=sys.stderr)
+        return 1
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cfp_writer import emit_rows, summary_line
+
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
 
     print(summary_line("manual input", len(rows), counts["new"], counts["updated"],
                        counts["unchanged"] + counts["skipped"]))

@@ -7,7 +7,7 @@
 
 ## Data and access
 
-This keyless static, Sessionize-derived dataset supplies `name`, submission `url`, event `website`, `event_start`, exact `cfp_close_utc`, `location`, ISO alpha-2 `country`, `online`, inferred `tags`, `perks`, `id`, and `updated`. Both documents must contain a `cfps` list. Readable caches have no TTL. The project states a three-hour rebuild cadence; the dated snapshot contained 556 open records generated at `2026-11-11T21:38:27Z`, not a stable coverage total.
+This keyless static, Sessionize-derived dataset supplies `name`, submission `url`, event `website`, `event_start`, exact `cfp_close_utc`, `location`, ISO alpha-2 `country`, `online`, inferred `tags`, `perks`, `id`, and `updated`. Both documents must contain a `cfps` list. Live fetches refresh the shared cache. A failed fetch uses valid cached JSON. `--offline` requires cached responses. The project states a three-hour rebuild cadence; the dated snapshot contained 556 open records generated at `2026-11-11T21:38:27Z`, not a stable coverage total.
 
 Data is **CC BY 4.0** (code is separately MIT). Required attribution: **Open Tech CFPs, https://github.com/1kevgriff/OpenTechCFPs**, with a link to [LICENSE-DATA](https://github.com/1kevgriff/OpenTechCFPs/blob/main/LICENSE-DATA).
 

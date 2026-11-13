@@ -25,6 +25,8 @@ data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`)
   warnings, and instructions where a misreading has a cost.
 - Use active voice and simple tenses. Give one instruction per sentence. Keep instructions to 20
   words or fewer per sentence and descriptions to 25 words or fewer.
+- Keep current implementation rules in `INSTRUCTIONS.md` or this file. `docs/spec.md` is a
+  historical snapshot. Do not present it as current behavior.
 - Do not use semicolons or phrasal verbs. Use lists for three or more steps or conditions. Use the
   same term for the same concept throughout a document.
 - Preserve technical terms, conditions, scope, and uncertainty. Do not remove required details only
@@ -80,17 +82,17 @@ uv run python src/process-all.py      # every source → data/   (uv project: py
 # or:  python3 src/process-all.py
 ```
 
-Options: `--months-back N` (how far back "recently closed" reaches, default 1), `--today
-YYYY-MM-DD`, `--cache DIR`. Needs python3 + network + PyYAML + pycountry (`uv sync`, or
-`pip install -r requirements.txt`). (`--focus-tags` /
-`--no-focus` are retained but only affect the retired report — see *Focus filtering* below.)
+Options include `--months-back N`, `--past-days N`, `--today YYYY-MM-DD`, `--cache DIR`, and
+`--offline`. Every source receives the same dates and cache context. The writer also receives the
+run date for note timestamps. Live fetches refresh the cache. Offline mode requires cached files.
 
-`process-all.py` validates `EVENT_TYPES` before source/archive subprocesses. Its summary also
-prints a source × event-type matrix of live notes after deduplication/archiving; ★ marks included
-types. These note counts differ from the raw source-row totals.
+`process-all.py` validates configuration before source collection. It collects every enabled source
+before note writes. `reconcile.py` selects current rows and migrates curated fields when a note
+changes its path or owner. The summary's source × event-type matrix counts live notes after
+reconciliation and archiving. The row totals count all collected rows.
 
-`src/normalize-data.py` re-emits existing notes to the current shape in place (drops
-frontmatter `notes`, re-quotes values); idempotent.
+`src/normalize-data.py` re-emits existing CFP notes to the current shape. It moves frontmatter
+`notes` into the body. It ignores non-CFP Markdown files and is idempotent.
 
 ## Layout of this folder
 
@@ -104,9 +106,12 @@ Everything an agent needs is here, deliberately:
 - `src/config.py` — tracked defaults plus the validated `config_local.py` loader.
 - `src/config_local.py` — personal overrides, gitignored; copy `src/config_local.example.py`
   to create it. Unset settings inherit the defaults.
-- `src/discovered-topics.txt` — generated confs.tech topic reference; not used for extraction.
-- `src/process-all.py` — wrapper that runs every **enabled** source (see `INPUT_SOURCES`
-  in `src/config_local.py`) into `data/`; skipped sources' notes are left in `data/`, not archived.
+- `src/discovered-topics.txt` — reference-only confs.tech topics. Write it explicitly with
+  `--write-discovered-topics`. Normal refreshes leave it unchanged.
+- `src/process-all.py` — collects enabled sources before note writes, reconciles notes, then archives.
+- `src/sources.py` — the source registry and shared run context.
+- `src/reconcile.py` — resolves current ownership and predecessor state before writes.
+- `src/http_cache.py` — the online-first HTTP cache, atomic writes, and offline behavior.
 - `src/process-developer-events.py` — developers.events fetcher (was `src/build-open-cfps.py`; that name remains as a shim).
 - `src/process-cfp-ninja.py` — cfp.ninja fetcher (public `api/v0/events`).
 - `src/process-confs-tech.py` — confs.tech fetcher.
@@ -119,7 +124,9 @@ Everything an agent needs is here, deliberately:
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
 - `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
-- `src/check-links.py` — HTTP liveness sweep over a report's links.
+- `src/check-links.py` — HTTP checks over CFP and event URLs in a note directory.
+  A single legacy Markdown report also works. Only 404/410 responses count as dead links.
+  Dead links return 1. Unreadable notes return 2 because verification is incomplete.
 - `prestige.md` — the hand-curated conference ranking (`conf name | ranking | keywords`) that
   `src/apply-prestige.py` turns into each note's `tier`. Judgment, not data: no feed carries
   attendance, acceptance rate, or program pedigree.
@@ -170,8 +177,15 @@ dismissed: false               # user flag, defaults false and preserved across 
 submissions: []                # wiki links (a list), preserved across runs
 created: 2026-11-06            # pipeline stamp: the note's first-seen date, set once
 updated: 2026-11-06            # pipeline stamp: run date of the last source-driven rewrite
+replaces: [2026-11-01_old-name.md]  # optional; migrated predecessor lineage, relative to data/
 tier: 1                        # optional; curated from prestige.md (1 flagship, 2 major, 3 notable)
 ```
+
+`replaces` appears only on notes migrated from another path. It records data-relative predecessor
+paths. The reconciler uses it to prevent a later refresh from merging the same predecessor again.
+User deletions and flag resets therefore survive when `--no-archive` leaves a predecessor in place.
+A later path migration excludes ancestors named in another note's `replaces` list. The live
+descendant supplies state instead. New notes and the vault template omit the property.
 
 `tier` is written by `src/apply-prestige.py`, not by `src/cfp_writer.py`, and appears only on
 notes a `prestige.md` row matches. It is a *number* (`tier: 1`, unquoted) so a Bases filter can
@@ -198,11 +212,13 @@ as dates and Obsidian maps them to its date property; `_as_str` turns them back 
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 
-## Focus filtering
+## Output and reconciliation
 
-Legacy. `FOCUS_TAGS` (in `src/process-developer-events.py`) and the 🤖 marker belonged to the
-retired single-file report; the per-CFP notes carry no marker, so `--focus-tags` / `--no-focus`
-currently change nothing the base reads. Kept for reference / if the report returns.
+The retired aggregate report no longer belongs to the refresh path. Every adapter produces note
+rows. `sources.py` supplies one source registry and run context. `reconcile.py` selects current
+winners before any note writes. Standalone adapter commands use the same reconciler through
+`cfp_writer.emit_rows`. They produce live and superseded manifests for external archive runs.
+External callers must pass both manifest types and protect other paused sources explicitly.
 
 ## Pitfalls
 
@@ -210,7 +226,8 @@ currently change nothing the base reads. Kept for reference / if the report retu
   contains defaults and loads local ALL_CAPS overrides at import. A setting in the local file
   replaces its default; unset names inherit. Unknown setting names and errors in the local file
   fail loudly rather than reverting silently. Copy `src/config_local.example.py` to create it.
-  Adapter imports deliberately do not swallow configuration errors.
+  Adapter imports deliberately do not swallow configuration errors. Duplicate curation merges
+  preserve extra-property values semantically and may reformat them with PyYAML.
 - **The source-owned fields are regenerated; everything else survives a refresh.**
   `event_name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
   `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `dismissed`,
@@ -272,19 +289,21 @@ currently change nothing the base reads. Kept for reference / if the report retu
 - **A refresh only rewrites a note whose source properties actually changed.** Before
   writing, `upsert` compares each source-owned property in the existing note (semantic
   compare — quoting/formatting differences do not count) and skips the write when all
-  match, so untouched notes keep their mtime and your edits are never clobbered. Extra
-  properties are re-emitted verbatim, including block lists and nested maps. The exceptions are
+  match, so untouched notes keep their mtime and your edits are never clobbered. Ordinary rewrites
+  preserve extra-property lines, including block lists and nested maps. A duplicate curation merge
+  preserves their values semantically and may reformat them with PyYAML. The exceptions are
   missing `created`/`updated` stamps and a missing `dismissed` flag: those back-fill once without
   advancing valid stamps, then the note is unchanged again.
 - **Tests are required for every code change.** `python3 -m unittest discover -s tests -v`
   (stdlib only) covers the change detection and preservation rules. Any `src/` edit must keep
   the suite passing — update tests whose expectations legitimately changed, and add tests for
   new behaviour. Fixtures are real slices of the downloaded data under `tests/fixtures/`.
-- **Dropped events are archived, not left behind.** `process-all.py` moves an untouched `type: cfp`
-  note into `archived/` when **no** source produced it during the run. Before each move, the
-  archiver compares user-curation fields with their generated defaults. It retains a note with
-  `shortlist: true`, a submission, body notes, or custom frontmatter. A
-  registry-managed `tier` alone does not prevent archiving. Eligible notes move byte-for-byte.
+- **Dropped events are archived, not left behind.** `process-all.py` passes the reconciled live
+  paths to the archiver. The archiver retains an unproduced note with a shortlist, a submission,
+  body notes, legacy frontmatter notes, or custom metadata. A registry-managed `tier` alone does
+  not prevent archiving. A superseded note moves only after the reconciler migrates its curated
+  state to the live replacement. Every move preserves the file byte-for-byte.
+  The archiver checks all destinations before the first move and never overwrites an existing file.
   Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
   notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Short listed** and
   **Submitted** are single views without dismissal filtering or a Dismissed column; Submitted also
@@ -310,16 +329,16 @@ currently change nothing the base reads. Kept for reference / if the report retu
   `MANUAL_INPUT_FILES` in `src/config_local.py` lists relative file paths (usually basenames) inside `input/` and overrides the empty default; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
 - **A manual file may instead be a website checklist.** In the same explicitly listed
   `MANUAL_INPUT_FILES`, `- [Conference](https://event/)` bullets (also `*` / `+`) are
-  watched, not searched: `src/watchlist.py` fetches that page, chooses only an explicit
-  speaker-submission link (Call for Papers / Apply to Speak / …), and reads it once.
+  watched, not searched: `src/watchlist.py` fetches that page and ranks explicit
+  speaker-submission links. It checks at most three candidates and skips closed or broken ones.
   Generic speaker rosters and empty links are not CFPs. JSON-LD `Event` metadata wins;
   an absent event date stays `TBA`, no venue is invented unless structured metadata
   supplies it, and a close is read only near words like "deadline" or "closes" —
   otherwise `Unstated`, never the event date. Unresolved entries are reported, not
   fabricated. A fetch failure aborts the manual step *before* writing so the manifest
-  cannot orphan existing notes. `--cache DIR` supplies an optional hashed HTML cache
-  (otherwise it always fetches live); process-manual-input accepts `--out`, `--input`,
-  `--manifest` as before. A submission page explicitly saying applications/CFP/
+  cannot orphan existing notes. `--cache DIR` supplies the shared hashed HTML cache.
+  Live HTML refreshes it unless a failed fetch needs a cached fallback. `--offline` requires
+  cached pages. process-manual-input accepts `--out`, `--input`, and `--manifest` as before. A submission page explicitly saying applications/CFP/
   submissions are closed is **not** a discovered CFP; likewise a parsed close before
   today is skipped (`close >= today` remains eligible). `--today YYYY-MM-DD` gives the
   cutoff, or reproduces a past run. CFP pages are read as HTML only, with no browser/JS.
@@ -329,28 +348,26 @@ currently change nothing the base reads. Kept for reference / if the report retu
   (unwrapping Google `.../url?...&q=<real>` redirects), and strips emphasis. Without this the
   markdown — including a Google redirect URL — leaks into the name and slug. The CFP-Close
   cell keeps free text but drops a trailing `"/ Unstated"` (`Dec 2026 / Unstated` → `Dec 2026`).
-- **Overlapping feeds: a higher-priority source wins a shared note.** Some conferences appear in
-  both developers.events and confs.tech (or cfp.ninja) and normalize to the same slug. Without a
-  rule the later writer would overwrite the other. `cfp_writer.SOURCE_PRIORITY`
-  (`manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`) makes a lower-priority source skip a
-  note a higher-priority one already owns, so a no-op refresh reports 0 updated.
-- **Two feeds can name one CFP differently, so it slugifies twice** (`SCaLE` from confs.tech vs
-  `Southern California Linux Expo - SCaLE 24x` from developers.events — same `cfp_url`, two
-  notes). `cfp_writer.upsert` matches on the submission URL (`_url_key`) **before** the
-  "unchanged" short-circuit, so an existing loser note is skipped too, not just a not-yet-created
-  one: the higher-priority source owns it and the other's note is archived as an orphan. The match
-  is gated by `_names_compatible` — feeds reuse one form across *different* events (JS Poland /
-  NG Poland / AI Poland share a Google form; every Apidays city shares one Typeform; Dawn
-  Conferences covers Appdevcon and Webdevcon), so a shared URL alone must not merge them. Names
-  merge only when one normalised name contains the other or one name's tokens are a subset of the
-  other's (years ignored). On a priority tie the lower path wins, so two equal-priority notes for
-  one URL converge to one on the next run instead of archiving each other.
-- **A `"skipped"` row must not claim its path.** `upsert` returns `"new"` / `"updated"` /
-  `"unchanged"` / `"skipped"`; `upsert_counted` folds a row into a parser's counters **and** only
-  appends the note path to `produced` (the `--manifest`) when it is *not* skipped. If a yielding
-  row claimed its own path, `archive-orphans` would see the loser as "still produced" and never
-  move it — the duplicate would linger forever. `"skipped"` rows are counted as `unchanged` in the
-  summary line, so `found` still equals the row count.
+- **Current rows decide source ownership.** `sources.SOURCE_PRIORITY` ranks `manual` above
+  developers.events, cfp.ninja, confs.tech, adato-tracker, and Open Tech CFPs. The reconciler
+  compares these priorities only among rows collected for the current run. A stale higher-priority
+  note cannot suppress an active lower-priority source forever. A deliberately skipped richer source
+  still protects its existing notes. Standalone adapters treat every other source as paused.
+- **Identity is not the filename.** The reconciler first picks one current row per target path.
+  It then matches normalized submission URLs with `_names_compatible` to resolve different names.
+  Scheme and host comparison ignore case. Paths and query values preserve case because form IDs
+  may be case-sensitive. Years do not affect name compatibility. A shared form alone cannot merge
+  incompatible event names. Deadline and name changes therefore migrate to a new path instead of
+  losing to the old path's lexical order. Current compatible rows are revised CFPs on a priority
+  tie. The later deadline wins.
+- **Replacement migrates state before archiving.** The writer accepts an explicit predecessor.
+  It carries `shortlist`, `dismissed`, submissions, body notes, custom properties, sticky event
+  types, and `created` to the target. The replacement preserves live source values from the current
+  row. The archiver receives superseded paths separately and moves only validated replacements.
+- **Legacy low-level APIs have narrower behavior.** `upsert_counted` records non-skipped paths for
+  callers that still use it directly. Adapter commands use `emit_rows` instead. The full pipeline
+  uses structured reconciliation results, not manifests or child-process summary parsing.
+  Skipped results appear under `unchanged` in summaries, so `found` still counts collected rows.
 - **Never build frontmatter by hand-stringing values.** Use `cfp_writer`'s helpers; an
   unquoted name with `": "` (e.g. `Agentics Day: MCP + Agents Europe`) produces invalid YAML
   and the note exposes no properties.
@@ -378,8 +395,9 @@ currently change nothing the base reads. Kept for reference / if the report retu
   any `#fragment` survive verbatim. `normalize-data.py` cleans existing notes the same way.
 - **CFP platforms die; verify links before calling a list actionable.** Whole platforms shut
   down and leave dead URLs in the source (papercall.io hosted many CFPs and is now offline).
-  Sweep with `python3 src/check-links.py tmp/cfps.md` — it reports non-200s and can be narrowed
-  with `--only sessionize.com`. When a note's CFP link is dead, point the user at its event link.
+  Sweep with `python3 src/check-links.py data --only sessionize.com`. Only 404/410 responses are
+  dead. Blocked and failed checks remain unknown. Unreadable notes return exit 2.
+  When a CFP link is dead, use the event link.
 - **Page vs data mismatch is expected.** The developers.events site was built earlier, so its
   CFPs are a subset with older deadline strings (a rendered `Until 31-October-2026` can already
   be `01-November-2026` in the live JSON). Never reconcile the two; use the JSON and say the
@@ -389,19 +407,19 @@ currently change nothing the base reads. Kept for reference / if the report retu
   date on/after the deadline** — matching by name alone silently attaches a 2023 edition to a
   2026 CFP.
 - `conf.country` in all-events.json can be plain wrong (`DevFest 2026` at `Faro (Portugal)` had
-  `country: Lebanon`). Derive the flag/country from the trailing `(...)` **in the location
+  `country: Lebanon`). Derive the country from the trailing `(...)` **in the location
   string**, falling back to `country`.
 - Conference dates carry no year on the page; in the JSON they are epoch ms, which is what
-  gives you the real year. `format_event_dates` keeps a range for humans; the note's `event_date`
-  is the start date only (`event_date_start`).
+  gives you the real year. `event_date_start` keeps only the start date for the note's `event_date`.
 - `until` strings mix formats (`31-October-2026`, `March-15-2019`, French `10-Avr-2022`, ranges
   `21-Jan-2022->03-Mar-2022`) — use `untilDate`, not the string.
 - The source publishes **no CFP opening date**, only the deadline, so there is no "CFP open"
   field; "still open" is simply `cfp_close >= today`.
 - Many events are in the events file but *not* in the CFP file (no open CFP) — iterate the CFP
   file, never the events file.
-- Dedupe is by `(normalized name, close date)`; the same conference can legitimately reappear
-  with a revised deadline.
+- Each adapter collapses exact export duplicates before reconciliation. Do not deduplicate by name
+  alone. Confs.tech includes deadline, event date, location, and CFP URL in its export key.
+  `reconcile_rows` then resolves current ownership and predecessor paths.
 - **`tier` is curated, not derived — and it must never be inferred from feed data.** No source
   carries attendance, acceptance rate, or program pedigree, so any "prestige score" computed
   from what the feeds give you (deadline length, co-located events, benefits) would just measure
@@ -432,10 +450,11 @@ currently change nothing the base reads. Kept for reference / if the report retu
   matches" so they do not rot. `tier` is never in `SOURCE_SCALAR_FIELDS`: it is not compared
   against source data, so stamping it does not advance `updated`, and the writer re-emits it
   verbatim as user metadata.
-- **`INPUT_SOURCES` in `src/config_local.py` selects which sources run.** Remove a source from
-  the local list to skip its fetch. Its notes stay in `data/` — `archive-orphans.py --skip-source NAME` exempts
-  them — so a source can be paused without mass-archiving its notes. Unknown or empty values
-  raise `ValueError` before any source runs (same contract as `EVENT_TYPES`).
+- **`INPUT_SOURCES` in `src/config_local.py` selects which sources run.** Remove a source to skip
+  its fetch. `archive-orphans.py --skip-source NAME` protects its unmodified notes. A paused richer
+  note also vetoes a URL/name-compatible active replacement. A successful higher-priority current
+  replacement can supersede a lower-priority paused note after migrating its curated state.
+  Unknown or empty values raise `ValueError` before any source runs.
 - **`prestige.md` stays at the repo root** (and `apply-prestige.py` finds it there). The manual source reads only `MANUAL_INPUT_FILES`, so do not add the prestige list there either — it is a ranking table, not a CFP row.
 
 ## Verification

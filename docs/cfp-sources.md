@@ -11,9 +11,13 @@ Source notes verified 2026-11-11 unless a detail page says otherwise. Each sourc
 | [confs.tech](sources/confs-tech.md) | `conferences/<year>/<topic>.json` | MIT; `cfpUrl` + `cfpEndDate`; no `ai` topic file. |
 | [adato-tracker](sources/adato-tracker.md) | HTML table | Aggregator; use the table, not RSS. |
 | [Open Tech CFPs](sources/open-tech-cfps.md) | `api/open.json`, `api/closed.json` | CC BY 4.0; Sessionize-derived; filter `cfp_close_utc`; lowest priority. |
-| [Manual](sources/manual.md) | `input/*.md` | Hand-curated; highest priority. |
+| [Manual](sources/manual.md) | Files named in `MANUAL_INPUT_FILES` | Tables and website checklists; highest priority. |
 
-Priority: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` > `open-tech-cfps`.
+Among rows in the current run, priority is `manual` > `developers.events` > `cfp.ninja` >
+`confs.tech` > `adato-tracker` > `open-tech-cfps`.
+Disabled or unavailable sources retain their unmodified notes. A successful higher-priority
+current replacement can supersede a lower-priority paused note after curation migration.
+See `sources.py` for the canonical registry.
 
 ## Other sources
 

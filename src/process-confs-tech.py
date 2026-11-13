@@ -4,31 +4,58 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import json
 import re
 import sys
-import urllib.request
+import urllib.error
 from pathlib import Path
+
+from http_cache import fetch_json
 
 GITHUB_API = "https://api.github.com/repos/tech-conferences/conference-data/contents/conferences"
 RAW_BASE = "https://raw.githubusercontent.com/tech-conferences/conference-data/master/conferences"
 
 
-def _fetch_json(url: str, cache_path: Path | None = None, cache_key: str | None = None):
-    if cache_path and cache_key:
-        dest = cache_path / cache_key
-        if dest.is_file():
-            try:
-                return json.loads(dest.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-    req = urllib.request.Request(url, headers={"User-Agent": "cfp-merge/1.0", "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.load(resp)
-    if cache_path and cache_key:
-        cache_path.mkdir(parents=True, exist_ok=True)
-        (cache_path / cache_key).write_text(json.dumps(data), encoding="utf-8")
-    return data
+def _validate_listing(data, year: int) -> bool:
+    if not isinstance(data, list) or not data:
+        raise ValueError(f"confs.tech {year}: expected a nonempty topic listing")
+    topic_items = []
+    for item in data:
+        if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+            raise ValueError(f"confs.tech {year}: malformed topic listing entry")
+        if item["name"].endswith(".json"):
+            topic_items.append(item)
+    if not topic_items:
+        raise ValueError(f"confs.tech {year}: topic listing contains no JSON files")
+    return True
+
+
+def _validate_topic_events(data, year: int, filename: str) -> bool:
+    if not isinstance(data, list):
+        raise ValueError(f"confs.tech {year}/{filename}: expected a list of events")
+    if not all(isinstance(event, dict) for event in data):
+        raise ValueError(
+            f"confs.tech {year}/{filename}: expected every event to be an object"
+        )
+    return True
+
+
+def _fetch_json(
+    url: str,
+    cache_path: Path | None = None,
+    cache_key: str | None = None,
+    offline: bool = False,
+    validator=None,
+):
+    """Fetch JSON through the shared online-first cache."""
+    return fetch_json(
+        url,
+        cache_path,
+        cache_key,
+        offline=offline,
+        source="confs.tech",
+        accept="application/vnd.github+json",
+        validator=validator,
+    )
 
 
 def _parse_date(s) -> _dt.date | None:
@@ -45,11 +72,17 @@ def _parse_date(s) -> _dt.date | None:
 _DISCOVERED: set[str] = set()
 
 
-def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = None) -> list[dict]:
+def collect_rows(
+    cutoff: _dt.date,
+    today: _dt.date,
+    cache_path: Path | None = None,
+    offline: bool = False,
+) -> list[dict]:
     rows = []
-    seen = set()
+    seen = {}
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import config as _cfg
+    import cfp_writer as _writer
 
     _CONFS_TECH_TOPICS = {
         t.lower().replace("_", "-")
@@ -59,24 +92,50 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
 
     for year in (today.year, today.year + 1):
         try:
-            listing = _fetch_json(f"{GITHUB_API}/{year}", cache_path, f"confs-tech-listing-{year}.json")
-        except Exception as e:
-            print(f"could not list conferences/{year}: {e}", file=sys.stderr)
-            continue
-        for item in listing:
-            if not item.get("name", "").endswith(".json"):
+            listing = _fetch_json(
+                f"{GITHUB_API}/{year}",
+                cache_path,
+                f"confs-tech-listing-{year}.json",
+                offline=offline,
+                validator=lambda data, year=year: _validate_listing(data, year),
+            )
+        except Exception as exc:
+            if (
+                year == today.year + 1
+                and isinstance(exc, urllib.error.HTTPError)
+                and exc.code == 404
+            ):
                 continue
-            topic = item["name"].replace(".json", "")
+            raise RuntimeError(
+                f"confs.tech: could not list conferences/{year}: {exc}"
+            ) from exc
+        _validate_listing(listing, year)
+        topic_items = [item for item in listing if item["name"].endswith(".json")]
+
+        for item in topic_items:
+            topic = item["name"].removesuffix(".json")
             _DISCOVERED.add(topic)
-            if _CONFS_TECH_TOPICS and topic != "general" and topic.lower().replace("_", "-") not in _CONFS_TECH_TOPICS:
+            if (
+                _CONFS_TECH_TOPICS
+                and topic != "general"
+                and topic.lower().replace("_", "-") not in _CONFS_TECH_TOPICS
+            ):
                 continue
             try:
-                data = _fetch_json(f"{RAW_BASE}/{year}/{item['name']}", cache_path, f"confs-tech-{year}-{item['name']}")
-            except Exception as e:
-                print(f"could not fetch {year}/{item['name']}: {e}", file=sys.stderr)
-                continue
-            if not isinstance(data, list):
-                continue
+                data = _fetch_json(
+                    f"{RAW_BASE}/{year}/{item['name']}",
+                    cache_path,
+                    f"confs-tech-{year}-{item['name']}",
+                    offline=offline,
+                    validator=lambda data, year=year, filename=item["name"]: (
+                        _validate_topic_events(data, year, filename)
+                    ),
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    f"confs.tech: could not fetch {year}/{item['name']}: {exc}"
+                ) from exc
+            _validate_topic_events(data, year, item["name"])
             for ev in data:
                 cfp_end = _parse_date(ev.get("cfpEndDate"))
                 if cfp_end is None or cfp_end < cutoff:
@@ -84,20 +143,35 @@ def collect_rows(cutoff: _dt.date, today: _dt.date, cache_path: Path | None = No
                 name = ev.get("name") or ""
                 if any(t in name.lower() for t in _IGNORE):
                     continue
-                key = re.sub(r"[^a-z0-9]", "", name.lower())
-                if key in seen:
-                    continue
-                seen.add(key)
                 start = _parse_date(ev.get("startDate"))
                 event_date = start.isoformat() if start else "TBA"
+                online = ev.get("online") is True
+                country = "Online" if online else (ev.get("country") or "")
                 loc_parts = [ev.get("city"), ev.get("country")]
-                loc = ", ".join(p for p in loc_parts if p) or "—"
+                loc = "Online" if online else (", ".join(p for p in loc_parts if p) or "—")
+                key = (
+                    re.sub(r"[^a-z0-9]", "", name.lower()),
+                    cfp_end.isoformat(),
+                    event_date,
+                    loc.casefold(),
+                    _writer._url_key(ev.get("cfpUrl")),
+                )
+                topic_values = [] if topic == "general" else [topic]
+                if key in seen:
+                    previous = rows[seen[key]]
+                    previous["topics"] = list(
+                        dict.fromkeys(previous.get("topics", []) + topic_values)
+                    )
+                    continue
+                seen[key] = len(rows)
                 rows.append(
                     {
                         "name": name,
                         "location": loc,
                         "cfp_close": cfp_end.isoformat(),
                         "event_date": event_date,
+                        "country": country,
+                        "topics": topic_values,
                         "event_url": ev.get("url") or "",
                         "cfp_url": ev.get("cfpUrl") or "",
                     }
@@ -125,37 +199,40 @@ def main() -> int:
     ap.add_argument("--months-back", type=int, default=1)
     ap.add_argument("--cache", default=str(Path(__file__).resolve().parent.parent / "cache"))
     ap.add_argument("--manifest", default=None)
+    ap.add_argument("--superseded-manifest", default=None)
+    ap.add_argument(
+        "--offline",
+        action="store_true",
+        help="Read only cached responses; do not access the network.",
+    )
+    ap.add_argument(
+        "--write-discovered-topics",
+        action="store_true",
+        help="Write the upstream topic reference after a successful fetch.",
+    )
     args = ap.parse_args()
 
     today = _dt.date.fromisoformat(args.today)
     cutoff = today - _dt.timedelta(days=30 * max(1, args.months_back))
 
-    rows = collect_rows(cutoff, today, Path(args.cache))
-    write_discovered_topics(_DISCOVERED)
+    rows = [
+        {**row, "source": "confs.tech"}
+        for row in collect_rows(cutoff, today, Path(args.cache), offline=args.offline)
+    ]
+    if args.write_discovered_topics:
+        write_discovered_topics(_DISCOVERED)
 
     data_dir = Path(args.out).resolve()
-    data_dir.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from cfp_writer import upsert_counted, summary_line, write_manifest
+    from cfp_writer import emit_rows, summary_line
 
-    counts = {"new": 0, "updated": 0, "unchanged": 0, "skipped": 0}
-    produced = []
-    for r in rows:
-        row = {
-            "name": r["name"],
-            "event_date": r["event_date"],
-            "location": r["location"],
-            "country": "",
-            "cfp_close": r["cfp_close"],
-            "topics": [],
-            "event_url": r["event_url"],
-            "cfp_url": r["cfp_url"],
-            "source": "confs.tech",
-        }
-        upsert_counted(data_dir, row, counts, produced)
-
-    if args.manifest:
-        write_manifest(Path(args.manifest), produced, data_dir)
+    counts = emit_rows(
+        data_dir,
+        rows,
+        manifest=Path(args.manifest) if args.manifest else None,
+        superseded_manifest=Path(args.superseded_manifest) if args.superseded_manifest else None,
+        today=args.today,
+    )
 
     print(summary_line("confs.tech", len(rows), counts["new"], counts["updated"],
                        counts["unchanged"] + counts["skipped"]))
