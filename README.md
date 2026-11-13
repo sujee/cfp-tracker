@@ -15,6 +15,7 @@ CFP Tracker collects conference Calls for Papers (CFPs) from public sources, and
 - [Conference prestige](#conference-prestige)
 - [Sources](#sources)
 - [Development](#development)
+- [License](#license)
 
 ## Quickstart
 
@@ -161,3 +162,7 @@ Project details:
 - [`AGENTS.md`](AGENTS.md): data shapes, configuration, and preservation rules.
 - [`docs/spec.md`](docs/spec.md): historical specification from 2026-11-09.
   Use `INSTRUCTIONS.md` and `AGENTS.md` for current behavior.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
