@@ -392,8 +392,11 @@ External callers must pass both manifest types and protect other paused sources 
   tie. The later deadline wins.
 - **Replacement migrates state before archiving.** The writer accepts an explicit predecessor.
   It carries `shortlist`, `dismissed`, submissions, body notes, custom properties, sticky event
-  types, and `created` to the target. The replacement preserves live source values from the current
-  row. The archiver receives superseded paths separately and moves only validated replacements.
+  types, and `created` to the target. A field listed in `curated_fields` keeps the note's value
+  instead of the current row's, and `merge_curation` copies such a value from a duplicate loser
+  when the live target does not own that field. The replacement preserves live source values from
+  the current row. The archiver receives superseded paths separately and moves only validated
+  replacements.
 - **Legacy low-level APIs have narrower behavior.** `upsert_counted` records non-skipped paths for
   callers that still use it directly. Adapter commands use `emit_rows` instead. The full pipeline
   uses structured reconciliation results, not manifests or child-process summary parsing.

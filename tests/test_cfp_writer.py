@@ -314,6 +314,96 @@ class TestCuratedConflicts(WriterTestCase):
         self.assertIn("type: cfp", text)
 
 
+class TestMergeCuration(WriterTestCase):
+    """A curated value on a superseded note survives the merge into the target."""
+
+    def duplicate(self, location="Online", curated=(), event_url=None) -> Path:
+        """Write a second note for the same CFP and return its path."""
+        row = sample_row(name="Power Platform Days Barcelona 2026 Duplicate")
+        self.assertEqual(
+            cw.upsert(self.data, row, today="2026-11-06", deduplicate=False), "new"
+        )
+        path = cw.note_path(self.data, row)
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("location: Online", f"location: {location}")
+        if event_url:
+            text = text.replace(
+                "event_url: https://powerplatform.com", f"event_url: {event_url}"
+            )
+        if curated:
+            text = text.replace(
+                "submissions: []",
+                f"submissions: []\ncurated_fields: [{', '.join(curated)}]",
+            )
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_merge_migrates_a_curated_value_from_a_duplicate(self) -> None:
+        self.write_initial()
+        updated_before = self.frontmatter()["updated"]
+        duplicate = self.duplicate(location="New York, USA", curated=["location"])
+
+        self.assertEqual(cw.merge_curation(self.path, [duplicate], self.data), "updated")
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "New York, USA")
+        self.assertEqual(fm["curated_fields"], ["location"])
+        self.assertEqual(
+            fm["replaces"], [duplicate.relative_to(self.data).as_posix()]
+        )
+        self.assertEqual(fm["updated"], updated_before)  # curation, not a refresh
+
+    def test_merge_keeps_the_live_targets_own_curated_value(self) -> None:
+        self.write_initial()
+        self.edit("location: Online", "curated_fields: [location]\nlocation: Paris, France")
+        duplicate = self.duplicate(location="New York, USA", curated=["location"])
+
+        cw.merge_curation(self.path, [duplicate], self.data)
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Paris, France")
+        self.assertEqual(fm["curated_fields"], ["location"])
+
+    def test_merge_does_not_copy_an_uncurated_value(self) -> None:
+        self.write_initial()
+        duplicate = self.duplicate(location="New York, USA")
+
+        cw.merge_curation(self.path, [duplicate], self.data)
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Online")
+        self.assertNotIn("curated_fields", fm)
+
+    def test_merge_migrates_a_curated_event_url(self) -> None:
+        self.write_initial()
+        duplicate = self.duplicate(curated=["event_url"], event_url="https://fixed.example")
+
+        cw.merge_curation(self.path, [duplicate], self.data)
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["event_url"], "https://fixed.example")
+        self.assertEqual(fm["curated_fields"], ["event_url"])
+
+    def test_merge_skips_an_empty_curated_value(self) -> None:
+        self.write_initial()
+        duplicate = self.duplicate(location='""', curated=["location"])
+
+        cw.merge_curation(self.path, [duplicate], self.data)
+
+        fm = self.frontmatter()
+        self.assertEqual(fm["location"], "Online")
+        self.assertEqual(fm["curated_fields"], ["location"])
+
+    def test_second_merge_is_unchanged(self) -> None:
+        self.write_initial()
+        duplicate = self.duplicate(location="New York, USA", curated=["location"])
+        cw.merge_curation(self.path, [duplicate], self.data)
+        before = self.path.read_bytes()
+
+        self.assertEqual(cw.merge_curation(self.path, [duplicate], self.data), "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+
+
 class TestEventNameMigration(WriterTestCase):
     """The stored event name uses ``event_name`` instead of legacy ``name``."""
 

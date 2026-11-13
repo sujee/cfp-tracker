@@ -1287,9 +1287,13 @@ def prune_lineage_reference(path: Path, target_rel: str) -> str:
 def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
     """Merge user state from predecessor notes into an already reconciled note.
 
-    Source fields and conflicting metadata values in the live target win. Lists,
-    flags, submissions, body notes, and previously missing custom properties are
-    combined. Repeated merges are unchanged and never advance source timestamps.
+    Source fields and conflicting metadata values in the live target win. A
+    field a predecessor marks in ``curated_fields`` migrates when the live
+    target does not own that field, so an edit made on a superseded note
+    survives instead of being replaced by the target's source value. Lists,
+    flags, submissions, body notes, and previously missing custom properties
+    are combined. Repeated merges are unchanged and never advance source
+    timestamps.
     """
     path = Path(path)
     text = path.read_text(encoding="utf-8")
@@ -1303,6 +1307,8 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
     submissions = _read_submissions(fm)
     notes, conflict_text = _split_conflict_section(_body_and_legacy_notes(fm, body))
     extras = {key: value for key, value in fm.items() if key not in KNOWN_FM_KEYS}
+    curated = _curated_fields(fm)
+    curated_list = _as_list(fm.get("curated_fields"))
     created = _as_str(fm.get("created"))
     updated = _as_str(fm.get("updated"))
     replaces = _as_list(fm.get("replaces"))
@@ -1314,6 +1320,7 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
         list(submissions),
         notes,
         dict(extras),
+        [row.get(field, "") for field in CONFLICT_FIELDS],
         created,
         list(replaces),
     )
@@ -1326,6 +1333,21 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
         predecessor_fm, predecessor_body = _read_frontmatter(predecessor)
         if _as_str(predecessor_fm.get("type")) != "cfp":
             continue
+        # Carry a curated value over when the live target does not own the same
+        # field. The marker migrates too, so the next refresh keeps the value
+        # and reports the source disagreement instead of overwriting it.
+        predecessor_row = _row_from_frontmatter(predecessor_fm)
+        predecessor_curated = _curated_fields(predecessor_fm)
+        curated_list = _merge_list(
+            curated_list, _as_list(predecessor_fm.get("curated_fields"))
+        )
+        for field in CONFLICT_FIELDS:
+            if field not in predecessor_curated or field in curated:
+                continue
+            curated.add(field)
+            value = _as_str(predecessor_row.get(field)).strip()
+            if value:
+                row[field] = value
         replaces = _merge_list(
             replaces,
             [*_as_list(predecessor_fm.get("replaces")), predecessor_rel],
@@ -1349,6 +1371,8 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
         if _valid_stamp(previous_created):
             created = min(created, previous_created) if _valid_stamp(created) else previous_created
 
+    if curated_list:
+        extras["curated_fields"] = curated_list
     replaces = [
         rel for rel in replaces if rel != path.relative_to(data_dir).as_posix()
     ]
@@ -1360,6 +1384,7 @@ def merge_curation(path: Path, predecessors, data_dir: Path) -> str:
         submissions,
         notes,
         extras,
+        [row.get(field, "") for field in CONFLICT_FIELDS],
         created,
         replaces,
     )

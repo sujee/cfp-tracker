@@ -447,6 +447,33 @@ class ReconcileTest(unittest.TestCase):
         self.assertFalse(other_path.exists())
         self.assertFalse(writer.note_path(self.data, other).exists())
 
+    def test_curated_value_migrates_from_a_duplicate_loser(self) -> None:
+        # A curated note at the old path plus a plain note already at the current
+        # row's path: the curated value must move to the live target instead of
+        # being replaced by the target's source value.
+        loser = row(name="Example Summit and Conference 2027")
+        writer.upsert(self.data, loser)
+        loser_path = writer.note_path(self.data, loser)
+        text = loser_path.read_text(encoding="utf-8")
+        text = text.replace(
+            "location: London, UK",
+            "curated_fields: [location]\nlocation: New York, USA",
+        )
+        loser_path.write_text(text, encoding="utf-8")
+
+        current = row(location="Barcelona, Spain")
+        writer.upsert(self.data, current, deduplicate=False)
+        target = writer.note_path(self.data, current)
+
+        result = reconcile_rows(self.data, {"developers.events": [row()]}, today="2026-11-20")
+
+        fm, _ = writer._read_frontmatter(target)
+        self.assertEqual(fm["location"], "New York, USA")
+        self.assertEqual(fm["curated_fields"], ["location"])
+        self.assertIn(loser_path.relative_to(self.data).as_posix(), fm["replaces"])
+        self.archive(result)
+        self.assertFalse(loser_path.exists())
+
 
 class ExistingCuratedTest(unittest.TestCase):
     """``## Conflict`` is writer-owned, so it must not count as user curation."""
