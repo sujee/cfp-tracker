@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title">
+  <title id="title">CFP Tracker: microphone, calendar, and deadline checkmark</title>
+  <defs>
+    <style>
+      .navy { fill: #192756; }
+      .orange { fill: #fa6640; }
+    </style>
+  </defs>
+
+  <!-- Calendar binding rings -->
+  <rect class="navy" x="456" y="176" width="50" height="154" rx="25"/>
+  <rect class="navy" x="656" y="176" width="50" height="154" rx="25"/>
+
+  <!-- Calendar body and page -->
+  <rect class="navy" x="320" y="245" width="520" height="490" rx="56"/>
+  <path fill="#ffffff" d="M340 365H820V679Q820 715 784 715H340Z"/>
+  <path class="orange" d="M320 303Q320 245 378 245H509V330H454V245H656V330H709V245H782Q840 245 840 303V365H320Z"/>
+
+  <!-- Calendar dates -->
+  <rect class="navy" x="401" y="418" width="66" height="66" rx="12"/>
+  <rect class="navy" x="520" y="418" width="66" height="66" rx="12"/>
+  <rect class="navy" x="639" y="418" width="66" height="66" rx="12"/>
+  <rect class="navy" x="401" y="538" width="66" height="66" rx="12"/>
+  <rect class="navy" x="520" y="538" width="66" height="66" rx="12"/>
+
+  <!-- Deadline checkmark -->
+  <circle class="orange" cx="714" cy="568" r="67"/>
+  <path d="M680 568L704 592L749 541" fill="none" stroke="#ffffff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Simple handheld microphone -->
+  <g transform="rotate(25 240 620)">
+    <rect class="navy" x="252" y="570" width="350" height="116" rx="58"/>
+    <path class="orange" d="M267 566H315V690H267Z"/>
+    <ellipse class="navy" cx="200" cy="626" rx="94" ry="78"/>
+  </g>
+</svg>
