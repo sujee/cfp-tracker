@@ -1,5 +1,4 @@
 # CFP Tracker
-#cfp #conference
 
 <img align="right" width="120" src="images/cfp-tracker-logo.png" alt="CFP Tracker logo: a microphone and a calendar with a deadline checkmark">
 
@@ -11,6 +10,8 @@
 **Created by [sujee.dev](https://sujee.dev/) · [Project page](https://sujee.dev/projects/cfp-tracker/) · Updates [@sujee_dev](https://x.com/sujee_dev/)**
 
 Made with ❤️ as open source software, using [opencode](https://opencode.ai) + Kimi 3.1 Pro and DeepSeek 4.1 Flash.
+
+Enjoying CFP Tracker? Your ⭐️ will help the project reach more speakers.
 
 ## Contents
 
@@ -92,18 +93,17 @@ uv sync
 
 Without uv
 
-```
+```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-
 ### 3 - Configure (Optional)
 
 [`src/config.py`](src/config.py) contains the defaults. 
 
-You can customize as below; only customize what you need to overwrite
+Copy the defaults to an override file. Overwrite only the settings you need.
 
 ```bash
 cp   src/config_local.example.py    src/config_local.py  # <- gitignored
@@ -115,7 +115,7 @@ You can configure:
 - Event types to retain with `EVENT_TYPES`.
 - Event names and topics to reject with `IGNORE_NAMES` and `IGNORE_TOPICS`.
 
-See [configuration](docs/README.md#configuration)
+See [configuration](docs/README.md#configuration).
 
 ### 4 - Refresh the CFPs!
 
@@ -142,7 +142,6 @@ uv run python src/process-all.py
 The run prints a summary for each source. It also prints an event-type matrix.
 
 Use `uv run python src/process-all.py --help` to see all options.
-
 
 ## CFP Markdown format
 
@@ -191,10 +190,10 @@ Personalize the location views in the `formulas` section of `cfps.base`:
 - Set `my_country` to the canonical `country` value for your notes.
 - Edit `is_local_area` to list your local cities and area names.
 
-## Typical workflow:
+## Typical workflow
 
-1. Refresh the CFPs (run python fetcher)
-2. Open **Upcoming** view in Obsididian base (`cfps.base`) to find open CFPs.
+1. Refresh the CFPs with `uv run python src/process-all.py`.
+2. Open **Upcoming** view in Obsidian base (`cfps.base`) to find open CFPs.
 3. Set `shortlist: true` for interesting events.
 4. Set `dismissed: true` to hide an event from live views.
 5. Add wiki links to `submissions` after you submit a talk.
@@ -209,11 +208,11 @@ Since the CFPs are saved as local markdown files, you can use an Agent to analyz
 cd   cfps
 ```
 
-start your agent and ask questions like 
+Start your agent and ask questions such as:
 - `find me all AI conference CFPs`
 - `find me CFPs that are due within a month`
 
-## Conference 'prestige'
+## Conference prestige
 
 [`prestige.md`](prestige.md) assigns optional reputation tiers. Tier 1 means flagship, tier 2 means major, and tier 3 means notable. The refresh adds these tiers to matching notes.
 
