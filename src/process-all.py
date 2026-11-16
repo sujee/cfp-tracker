@@ -25,7 +25,7 @@ def _style(text: str, code: str) -> str:
     return f"{code}{text}{RESET}" if _tty() else text
 
 
-def _archive_orphans(data_dir: Path, archive_dir: Path, result, skipped_sources):
+def _archive_orphans(data_dir: Path, archive_dir: Path, result, skipped_sources, retain_after=None):
     """Load the hyphenated archive CLI as a library for one planned move pass."""
     path = Path(__file__).resolve().with_name("archive-orphans.py")
     spec = importlib.util.spec_from_file_location("cfp_archive_orphans", path)
@@ -39,6 +39,7 @@ def _archive_orphans(data_dir: Path, archive_dir: Path, result, skipped_sources)
         result.produced,
         skip_sources=skipped_sources,
         superseded=result.superseded,
+        retain_after=retain_after,
     )
 
 
@@ -218,7 +219,7 @@ def print_summary(
     )
     lines.append(f"  {on_disk} notes on disk in {data_dir}")
     if archived:
-        lines.append(f"  {archived} archived (no source carries them any more) -> {archive_dir}")
+        lines.append(f"  {archived} archived (orphans and merged duplicates) -> {archive_dir}")
     if included is None:
         included = included_event_types()
     lines.extend(event_type_summary_lines(collect_event_type_counts(data_dir), summaries, included))
@@ -235,10 +236,26 @@ def main() -> int:
         default=None,
         help="Archive destination (default: 'archived' beside --out).",
     )
-    ap.add_argument("--no-archive", action="store_true", help="Do not archive orphan or replaced notes.")
+    ap.add_argument(
+        "--no-archive",
+        action="store_true",
+        help="Do not archive orphan or merged duplicate notes. Revision renames still occur.",
+    )
     ap.add_argument("--today", default=datetime.date.today().isoformat())
-    ap.add_argument("--months-back", type=int, default=1)
-    ap.add_argument("--past-days", "--days-back", type=int, default=None, dest="past_days")
+    ap.add_argument(
+        "--months-back",
+        type=int,
+        default=3,
+        help="Lookback in 30-day units (default: 3, approximately 90 days).",
+    )
+    ap.add_argument(
+        "--past-days",
+        "--days-back",
+        type=int,
+        default=None,
+        dest="past_days",
+        help="Exact lookback in days. Overrides --months-back.",
+    )
     ap.add_argument(
         "--cache",
         default=str(Path(__file__).resolve().parent.parent / "cache"),
@@ -306,7 +323,13 @@ def main() -> int:
         )
         archived = 0
         if not args.no_archive and data_dir.is_dir():
-            moved = _archive_orphans(data_dir, archive_dir, result, skipped_sources)
+            moved = _archive_orphans(
+                data_dir,
+                archive_dir,
+                result,
+                skipped_sources,
+                retain_after=context.cutoff,
+            )
             archived = len(moved)
     except (OSError, ValueError) as exc:
         print(f"refresh failed: {exc}", file=sys.stderr)

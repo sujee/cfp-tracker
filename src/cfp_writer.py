@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import re
+import stat
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -345,7 +348,7 @@ KNOWN_FM_KEYS = {
     "created",
     "updated",
     # Relative paths whose curated state already moved into this note. This
-    # lineage prevents an unarchived predecessor from being merged repeatedly.
+    # lineage prevents an unarchived duplicate from being merged repeatedly.
     "replaces",
     # Computed conflict flag. The ``## Conflict`` body section carries the
     # field names and both values, so no separate frontmatter list is written.
@@ -802,6 +805,9 @@ def _write_if_changed(path: Path, text: str) -> str:
     matches the file byte-for-byte (nothing is written). Skipping the write
     keeps mtimes and file identity stable, so an unchanged refresh touches
     nothing. Any read error falls through to a normal write.
+
+    Changed content goes to a temporary sibling first. ``os.replace`` exposes it
+    only after a complete write, so a failed write cannot truncate the original.
     """
     existed = path.is_file()
     if existed:
@@ -810,7 +816,20 @@ def _write_if_changed(path: Path, text: str) -> str:
                 return "unchanged"
         except OSError:
             pass
-    path.write_text(text, encoding="utf-8")
+    mode = stat.S_IMODE(path.stat().st_mode) if existed else None
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as temporary:
+            temporary.write(text)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        if mode is not None:
+            os.chmod(temporary_name, mode)
+        os.replace(temporary_name, path)
+    finally:
+        Path(temporary_name).unlink(missing_ok=True)
     return "updated" if existed else "new"
 
 
@@ -1009,14 +1028,12 @@ def upsert(
     previous_path = Path(previous_path) if previous_path is not None else path
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Preserve user-curated state from an explicitly matched predecessor when
-    # reconciliation changes the note path or the owning source.
+    # Preserve user-curated state from the existing note when reconciliation
+    # changes its path or owning source. A one-to-one revision moves this note.
     existing = ""
     if previous_path.is_file():
-        try:
-            existing = previous_path.read_text(encoding="utf-8")
-        except OSError:
-            existing = ""
+        # Never render an unreadable note as empty. Its curation must survive.
+        existing = previous_path.read_text(encoding="utf-8")
     try:
         fm, body = _read_frontmatter_text(existing)
     except FrontmatterError:
@@ -1147,14 +1164,22 @@ def upsert(
         # ``updated`` starts equal to its ``created``.
         updated = created
 
+    renamed_from = previous_path if previous_path != path and previous_path.is_file() else None
+    # Existing lineage describes merged duplicate notes, not this file's old
+    # names. The ordinary one-to-one revision adds no new lineage entry.
     replaces = _as_list(fm.get("replaces"))
-    if previous_path != path and previous_path.is_file():
-        replaces = _merge_list(
-            replaces, [previous_path.relative_to(data_dir).as_posix()]
-        )
     replaces = [
         rel for rel in replaces if rel != path.relative_to(data_dir).as_posix()
     ]
+    if renamed_from is not None:
+        # Move the existing note before changing its contents. A failed update
+        # leaves one renamed original instead of two files with different state.
+        if path.exists():
+            raise FileExistsError(
+                f"could not revise {renamed_from}: target already exists: {path}"
+            )
+        renamed_from.rename(path)
+        previous_path = path
     status = _write_if_changed(
         path,
         _render(
@@ -1172,14 +1197,14 @@ def upsert(
     )
     if key and deduplicate:
         # Keep the in-process index current so a later row for the same URL sees
-        # the note this run just wrote. A replaced path no longer owns the URL.
+        # the note this run just wrote. The renamed-from path no longer owns it.
         index = _cfp_url_index(data_dir)
-        if previous_path != path and key in index:
-            index[key] = [entry for entry in index[key] if entry[0] != previous_path]
+        if renamed_from is not None and key in index:
+            index[key] = [entry for entry in index[key] if entry[0] != renamed_from]
         index.setdefault(key, []).append(
             (path, _as_str(row.get("source")), _as_str(row.get("name")))
         )
-    if previous_path != path and previous_path.is_file() and status == "new":
+    if renamed_from is not None:
         return "updated"
     return status
 

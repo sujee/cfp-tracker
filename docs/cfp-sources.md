@@ -15,9 +15,9 @@ Source notes verified 2026-11-11 unless a detail page says otherwise. Each sourc
 | [Manual](sources/manual.md) | Every file under `input/`, except `input/archived/` | Tables and website checklists; highest priority. |
 
 Among rows in the current run, priority is `manual` > `developers.events` > `cfp.ninja` >
-`confs.tech` > `adato-tracker` > `open-tech-cfps`.
+`python-deadlines` > `confs.tech` > `adato-tracker` > `open-tech-cfps`.
 Disabled or unavailable sources retain their unmodified notes. A successful higher-priority
-current replacement can supersede a lower-priority paused note after curation migration.
+current row can take ownership from a lower-priority paused note after curation migration.
 See `sources.py` for the canonical registry.
 
 ## Other sources

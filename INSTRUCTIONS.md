@@ -21,10 +21,10 @@ uv run python src/process-all.py      # every source → data/   (uses the proje
 `src/process-all.py` runs all **enabled** sources (`INPUT_SOURCES` in `src/config_local.py`,
 which overrides the defaults in `src/config.py`; copy `src/config_local.example.py` to create it).
 Remove a source from the local list to skip it. Unmodified notes from that source stay in `data/`.
-A successful current replacement can supersede a lower-priority paused note after curation migration.
-Unknown or empty source lists fail the run. Sources: developers.events, cfp.ninja, confs.tech,
-adato-tracker, Open Tech CFPs, and every hand-curated file under `input/`, except
-`input/archived/`.
+A successful current row can take ownership from a lower-priority paused note after curation migration.
+Unknown or empty source lists fail the run. Sources: developers.events, cfp.ninja,
+PythonDeadlin.es, confs.tech, adato-tracker, Open Tech CFPs, and every hand-curated file under
+`input/`, except `input/archived/`.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -32,14 +32,16 @@ adato-tracker, Open Tech CFPs, and every hand-curated file under `input/`, excep
   into the vault, whose notes are what `0-dashboard/bases/cfps.base` reads.
 - Omit `--today` for a normal refresh. Use `--today YYYY-MM-DD` to reproduce a past run.
   This date controls source filters and the note timestamps.
-- Use `--months-back N` for a 30×N-day lookback. Use `--past-days N` for an exact day count.
+- The default lookback is 90 days. Use `--months-back N` for a 30×N-day lookback.
+  Use `--past-days N` for an exact day count.
 - Live fetches update the shared cache. Use `--offline` to require cached responses.
   A failed live fetch uses a valid cached response and reports the fallback.
   Run `uv run python src/process-all.py --help` for every option.
 - The pipeline collects every enabled source before it writes notes. A collection error stops the run.
-  The reconciler then selects current rows and migrates curated state from replaced notes.
-- The archiver moves notes that no source produces through the `archived/` symlink.
-  It aborts all moves if a destination already exists. `--no-archive` disables every move.
+  The reconciler then selects current rows. It renames revised notes and migrates state from duplicates.
+- The archiver moves eligible archive candidates through the `archived/` symlink.
+  It aborts all moves if a destination already exists. `--no-archive` disables archiving.
+  Canonical revision renames still occur.
   Use `--archive DIR` to change the destination.
 - Last, `src/apply-prestige.py` stamps the curated `tier` (1/2/3) from `prestige.md` onto the
   matching notes. It runs inside `process-all.py` (`--no-prestige` skips it, `--prestige FILE`
@@ -86,10 +88,10 @@ tests for the new behaviour**:
 ## Archived notes
 
 A refresh writes only the notes that the sources still carry. The archiver moves an untouched
-note into `archived/` when no source produced it during the run. The move preserves the same
-`<year>/` layout and every byte. Each live view in `cfps.base` excludes that folder. The
-**Archived** view includes it. The folder exclusion is per-view because the base's top-level
-filter ANDs with every view.
+note into `archived/` when no source produced it during the run, unless retention protects it.
+The move preserves the same `<year>/` layout and every byte. Each live view in `cfps.base` excludes
+that folder. The **Archived** view includes it. The folder exclusion is per-view because the base's
+top-level filter ANDs with every view.
 
 The archiver checks user-curation fields before each move. It keeps the note in `data/` when it
 finds any of these values:
@@ -102,19 +104,28 @@ finds any of these values:
 The `dismissed` value does not affect archiving. The registry-managed `tier` property alone does
 not prevent archiving. An untouched note moves with its fields and body unchanged.
 
-A replaced note is different. The reconciler first migrates its curated state to the live note.
-Its `replaces` list records every migrated predecessor. A later refresh does not merge that
-predecessor again, even when `--no-archive` leaves it in `data/`.
-The archiver then moves the replaced note even when it contains curated fields.
+The full pipeline supplies its shared cutoff for rolling-window retention. An eligible note stays
+live when its ISO `cfp_close` is on or after that cutoff. The note must pass the configured name,
+type, and topic filters. A current note with the same CFP identity prevents retention. A merged
+duplicate still archives. A free-text close receives no rolling-window protection.
+
+An ordinary revision updates the existing note and moves it to its canonical path. It leaves no
+predecessor in `archived/` and adds no `replaces` entry.
+
+A duplicate merge is different. The reconciler first migrates curated state from each duplicate
+to the surviving note. The survivor's `replaces` list records every merged duplicate. A later
+refresh does not merge that duplicate again, even when `--no-archive` leaves it in `data/`.
+The archiver then moves the duplicate even when it contains curated fields.
 The archiver validates every destination before the first move. An existing destination stops the
 operation without overwriting the archived note.
 
 - The full pipeline passes produced and superseded paths directly to the archiver.
 - Standalone adapters support `--manifest FILE` and `--superseded-manifest FILE` for external
   archive runs. Pass both outputs to `archive-orphans.py` as `--manifest FILE` and
-  `--superseded FILE`. A curated predecessor stays live if the superseded manifest is omitted.
+  `--superseded FILE`. A curated duplicate stays live if the superseded manifest is omitted.
   Standalone commands do not archive notes by themselves. Supply other source manifests or
   `--skip-source NAME` before archiving, so unproduced notes from absent sources stay protected.
+  Use `--retain-after YYYY-MM-DD` to enable rolling-window retention for an external archive run.
 - Expected manifest files must exist. Manifest entries must use relative paths without `..`.
 - Only notes with `type: cfp` belong in `data/`. The archiver leaves other files untouched.
 - Use `python3 src/archive-orphans.py --dry-run --manifest FILE` to inspect planned moves.
@@ -196,6 +207,8 @@ Merged into `data/`:
 - **cfp.ninja** — `cfp.ninja/api/v0/events` (public, no auth). Real `cfp_open_at`/`cfp_close_at`
   dates and speaker benefits (`travel`/`hotel`/`honorarium` → the note's `benefits`). The
   submission page is `cfp.ninja/e/<slug>`; filter on `cfp_close_at`, never `cfp_status`.
+- **PythonDeadlin.es** — public `conferences.yml` with event links and actionable CFP links.
+  Filter on the CFP deadline. Rank below cfp.ninja and above confs.tech.
 - **confs.tech** — `github.com/tech-conferences/conference-data` JSON (`cfpUrl` + `cfpEndDate`).
 - **adato-tracker** — the `tablesorter` table on `adatosystems.com/cfp-tracker/` (Leon Adato).
   Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the same
@@ -208,12 +221,13 @@ Merged into `data/`:
   Explicitly closed submission pages and closes before `--today` are skipped.
 
 The reconciler compares source priority only among rows collected for the current run.
-Priority: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` >
-`open-tech-cfps`. A stale higher-priority note does not block an active source.
+Priority: `manual` > `developers.events` > `cfp.ninja` > `python-deadlines` > `confs.tech` >
+`adato-tracker` > `open-tech-cfps`. A stale higher-priority note does not block an active source.
 A deliberately skipped richer source protects its existing notes.
 Normalized submission URLs combine with compatible event names to match different paths.
 Compatible current rows with later deadlines win a same-source revision tie.
-The writer migrates curated fields before the archiver moves replaced notes.
+A revision updates and renames its existing note without an archived predecessor.
+The writer migrates curated fields from duplicate notes before the archiver moves those duplicates.
 
 More may be added — see `docs/cfp-sources.md` for scriptable/browsable-only status and
 `docs/sources/` for detailed notes. When you add one: a fetcher under `src/` that normalises to the same row
@@ -231,12 +245,12 @@ file and the README in the same change.
 - `src/process-all.py` — collects enabled sources, reconciles notes, then archives orphans.
   A failed source stops the run before note writes. Skipped sources' notes stay in `data/`.
 - `src/sources.py` — canonical source registry and shared collection context.
-- `src/reconcile.py` — selects current rows and migrates state from replaced notes.
+- `src/reconcile.py` — selects current rows, renames revised notes, and merges duplicate state.
 - `src/http_cache.py` — shared online-first HTTP cache with an offline mode.
-- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
+- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-python-deadlines.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
-- `src/archive-orphans.py` — moves notes no source produces any more into `archived/`.
+- `src/archive-orphans.py` — archives orphans while retaining eligible notes inside the rolling window.
 - `src/watchlist.py` — parses explicit checklist bullets and discovers a conference site's own CFP link; extracts only stated dates/metadata.
 - `src/normalize-data.py` — one-off pass to re-emit existing notes to the current shape.
 - `src/check-links.py` — checks event and CFP URLs under `data/`.

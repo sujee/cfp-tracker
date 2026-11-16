@@ -25,14 +25,14 @@ One refresh runs five stages, in this order:
 2. Collect every enabled source into memory.
 3. Reconcile the rows and choose one owner for each note path.
 4. Write the notes that changed.
-5. Archive the notes that no source produces any more.
+5. Apply archive and retention rules to unproduced and duplicate notes.
 
 A source error stops the run before the first note write. A failed fetch reuses a valid
 cached response. `--offline` reads only the cache and stops at the first miss.
 
 ### Sources
 
-CFP Tracker reads several public CFP feeds and datasets, plus the manual files you list.
+CFP Tracker reads several public CFP feeds and datasets, plus every manual file under `input/`.
 When two sources describe the same CFP, the pipeline keeps one note.
 
 See [`cfp-sources.md`](cfp-sources.md) for the source list, priorities, field mappings, and
@@ -104,7 +104,7 @@ _Add notes here._
 | `created` | pipeline | First time the note appeared. Never changes. |
 | `updated` | pipeline | Advanced only when a source value changes. |
 | `conflict` | pipeline | `true` when a curated value and a source value disagree. |
-| `replaces` | pipeline | Predecessor paths after a path migration. |
+| `replaces` | pipeline | Paths of duplicate notes merged into this note. |
 | `tier` | `apply-prestige.py` | `1` flagship, `2` major, `3` notable. |
 
 ### What survives a refresh
@@ -117,6 +117,13 @@ The refresh rebuilds every source field. It keeps everything else:
 
 A note rewrites only when a source value actually changed. An unchanged refresh leaves the
 file and its modification time alone.
+
+The writer uses a temporary sibling and an atomic replacement for changed notes. A failed write
+keeps the previous contents.
+
+A name or deadline revision updates and renames the existing note. It creates no archived
+predecessor and adds no `replaces` entry. A duplicate merge preserves user curation and records
+the archived duplicate in `replaces`.
 
 ### Curated fields and conflicts
 
@@ -188,17 +195,19 @@ uv run python src/process-all.py
 | `--out DIR` | `data` | Notes directory. |
 | `--input DIR` | `input` | Directory for manual input files. |
 | `--archive DIR` | `archived` beside `--out` | Archive directory. |
-| `--no-archive` | off | Do not move any note. |
+| `--no-archive` | off | Do not archive any note. Canonical revision renames still occur. |
 | `--today YYYY-MM-DD` | Today | Run date. Reproduces a past run. |
-| `--months-back N` | `1` | Lookback window in months. |
-| `--past-days N` | `30 × months-back` | Lookback window in days. Also `--days-back`. |
+| `--months-back N` | `3` | Source window and archive retention in 30-day units. The default is 90 days. |
+| `--past-days N` | `30 × months-back` | Source window and archive retention in days. Also `--days-back`. Overrides `--months-back`. |
 | `--cache DIR` | `cache/` | HTTP cache directory. |
 | `--offline` | off | Read the cache only. No network access. |
 | `--prestige FILE` | `prestige.md` | Ranking table. |
 | `--no-prestige` | off | Do not stamp `tier`. |
 | `--help` | | List every option. |
 
-The run prints a per-source summary and an event-type matrix.
+The run prints a per-source summary and an event-type matrix. Eligible source-missing notes stay
+live while their ISO deadline is on or after the cutoff. Exclusions and duplicate matches still
+allow archiving.
 
 ### Utility scripts
 
@@ -207,7 +216,7 @@ The run prints a per-source summary and an event-type matrix.
 | `src/check-links.py PATH [--only TEXT] [--workers N] [--timeout S]` | Check CFP and event URLs. Only `404` and `410` count as dead. |
 | `src/normalize-data.py [--data DIR]` | Re-emit existing notes in the current shape. Safe to repeat. |
 | `src/apply-prestige.py [--data DIR] [--list FILE] [--check]` | Stamp `tier` from the ranking table. `--check` writes nothing. |
-| `src/archive-orphans.py [--data DIR] [--archive DIR] [--dry-run] [--json]` | Move notes that no source produces. `--skip-source NAME` protects one source. |
+| `src/archive-orphans.py [--data DIR] [--archive DIR] [--dry-run] [--json]` | Move notes that no source produces. `--skip-source NAME` protects one source. `--retain-after YYYY-MM-DD` enables rolling-window retention. |
 
 Each source also has a standalone adapter, for example
 `uv run python src/process-confs-tech.py`. An adapter command reconciles on its own and
@@ -279,7 +288,7 @@ parsed close before `--today`. With `--today`, a past run is reproducible.
 
 ## Archiving
 
-A refresh moves a note to `archived/` when no current source produces it.
+A refresh moves a note to `archived/` when no current source produces it and no protection applies.
 
 A note stays in `data/` when it has any of these:
 
@@ -287,6 +296,11 @@ A note stays in `data/` when it has any of these:
 - An entry in `submissions`.
 - Body notes you wrote.
 - Extra frontmatter keys you added.
+
+Rolling-window retention also keeps an eligible source-missing note in `data/`. Its ISO
+`cfp_close` must be on or after the shared cutoff. The note must pass configured name, type, and
+topic filters. A current note with the same CFP identity prevents retention. Merged duplicates
+still archive. A free-text close receives no rolling-window protection.
 
 A `tier` alone does not keep a note in `data/`. A moved file keeps its bytes. A move never
 overwrites an existing file, and `--no-archive` disables the stage.
@@ -320,7 +334,7 @@ of the downloaded data. Any change under `src/` must keep the suite passing.
 |---|---|
 | `src/process-all.py` | The refresh entry point. |
 | `src/sources.py` | Source registry, priority, and run context. |
-| `src/reconcile.py` | Chooses owners and predecessors before any write. |
+| `src/reconcile.py` | Chooses owners, revision renames, and duplicate merges before writes. |
 | `src/cfp_writer.py` | Writes and refreshes one note per CFP. |
 | `src/http_cache.py` | Online-first HTTP cache with offline fallback. |
 | `src/process-*.py` | One adapter per source. |

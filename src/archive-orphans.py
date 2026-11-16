@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Move unproduced CFP notes into an ``archived/`` folder, fail on collisions.
+"""Archive unproduced CFP notes, with optional rolling-window retention.
 
 Expected manifests must exist and contain relative note paths. ``--skip-source``
-protects unmodified notes owned by a deliberately unavailable source. Replaced
-notes are explicitly supplied by reconciliation, so their curated fields can be
-migrated before the old note is archived even when curation would normally keep
-it live.
+protects unmodified notes owned by a deliberately unavailable source. Duplicate
+notes are explicitly supplied after reconciliation migrates their curated fields.
+They can therefore move even when curation would normally keep them live.
 """
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -64,20 +64,105 @@ def has_manual_changes(fm: dict, body: str) -> bool:
     )
 
 
-def find_orphans(data_dir: Path, produced: set[str], skip_sources=(), superseded=()) -> list[str]:
+def _iso_day(value):
+    """Return a date for an exact ISO frontmatter value, else ``None``."""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    try:
+        return datetime.date.fromisoformat(str(value or "").strip())
+    except ValueError:
+        return None
+
+
+def _excluded_from_retention(fm: dict) -> bool:
+    """Apply the configured name, type, and topic exclusions to a stored note."""
+    import config
+    from cfp_writer import (
+        _as_list,
+        _as_str,
+        _event_name,
+        _event_type_included,
+        event_name_is_ignored,
+        infer_event_type,
+    )
+
+    name = _event_name(fm)
+    if event_name_is_ignored(name):
+        return True
+    event_type = _as_str(fm.get("event_type")).strip() or infer_event_type(name)
+    if not _event_type_included(event_type):
+        return True
+    ignored = [str(term).casefold() for term in getattr(config, "IGNORE_TOPICS", [])]
+    texts = [name, *_as_list(fm.get("topics"))]
+    return any(term in text.casefold() for term in ignored for text in texts)
+
+
+def _same_cfp_identity(first: dict, second: dict) -> bool:
+    """Match current CFP identity, with a strict event-page fallback for URL edits."""
+    from cfp_writer import _event_name, _name_tokens, _names_compatible, _url_key
+
+    if not _names_compatible(_event_name(first), _event_name(second)):
+        return False
+    first_cfp = _url_key(first.get("cfp_url"))
+    if first_cfp and first_cfp == _url_key(second.get("cfp_url")):
+        return True
+
+    # A changed CFP URL needs stronger evidence than the usual name heuristic.
+    # Equal token sets allow year-only name changes but separate workshops and
+    # other suffix editions from the main event. Placeholder dates never match.
+    first_event = _url_key(first.get("event_url"))
+    first_date = _iso_day(first.get("event_date"))
+    if (
+        not first_event
+        or first_event != _url_key(second.get("event_url"))
+        or not first_date
+        or first_date != _iso_day(second.get("event_date"))
+    ):
+        return False
+    first_tokens = _name_tokens(_event_name(first))
+    return bool(first_tokens and first_tokens == _name_tokens(_event_name(second)))
+
+
+def find_orphans(
+    data_dir: Path,
+    produced: set[str],
+    skip_sources=(),
+    superseded=(),
+    retain_after=None,
+) -> list[str]:
     """Return notes eligible for archiving after one complete reconciliation.
 
     Curated unproduced notes normally stay live. A reconciler can explicitly mark
-    a note as superseded after migrating its curated state, which overrides that
-    protection for that note only. Non-CFP files are always left untouched.
+    a merged duplicate as superseded after migrating its curated state. This
+    overrides protection for that duplicate only. Eligible source-missing notes
+    with deadlines on or after ``retain_after`` also stay live. Exclusions and
+    current duplicate matches override this rolling-window protection.
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from cfp_writer import _read_frontmatter, _as_str, FrontmatterError
 
+    cutoff = _iso_day(retain_after) if retain_after is not None else None
+    if retain_after is not None and cutoff is None:
+        raise ValueError(f"retain_after must be YYYY-MM-DD, got {retain_after!r}")
+    current_notes = []
+    paths = sorted(data_dir.rglob("*.md"))
+    if cutoff:
+        for path in paths:
+            if path.relative_to(data_dir).as_posix() not in produced:
+                continue
+            try:
+                fm, _body = _read_frontmatter(path)
+            except (OSError, FrontmatterError):
+                continue
+            if _as_str(fm.get("type")) == "cfp":
+                current_notes.append(fm)
+
     skipped = {source for source in (skip_sources or ()) if source}
     replaced = set(superseded or ())
     orphans = []
-    for path in sorted(data_dir.rglob("*.md")):
+    for path in paths:
         rel = path.relative_to(data_dir).as_posix()
         if rel in produced:
             continue
@@ -92,6 +177,12 @@ def find_orphans(data_dir: Path, produced: set[str], skip_sources=(), superseded
                 continue
             if has_manual_changes(fm, body):
                 continue
+            close = _iso_day(fm.get("cfp_close"))
+            if cutoff and close and close >= cutoff:
+                if not _excluded_from_retention(fm) and not any(
+                    _same_cfp_identity(fm, current) for current in current_notes
+                ):
+                    continue
         orphans.append(rel)
     return orphans
 
@@ -103,6 +194,7 @@ def archive_orphans(
     dry_run: bool = False,
     skip_sources=(),
     superseded=(),
+    retain_after=None,
 ) -> list[str]:
     """Move orphan notes byte-for-byte, or return planned moves for a dry run.
 
@@ -110,7 +202,9 @@ def archive_orphans(
     operation instead of overwriting an existing archived note or leaving a
     partially executed move plan.
     """
-    moved = find_orphans(data_dir, produced, skip_sources, superseded)
+    moved = find_orphans(
+        data_dir, produced, skip_sources, superseded, retain_after=retain_after
+    )
     moves = [(data_dir / rel, archive_dir / rel, rel) for rel in moved]
     if dry_run:
         return moved
@@ -135,7 +229,12 @@ def main() -> int:
         "--superseded",
         action="append",
         default=[],
-        help="Replacement manifest JSON from --superseded-manifest (repeatable).",
+        help="Merged-duplicate manifest JSON from --superseded-manifest (repeatable).",
+    )
+    ap.add_argument(
+        "--retain-after",
+        default=None,
+        help="Keep eligible source-missing CFPs closing on or after YYYY-MM-DD.",
     )
     ap.add_argument(
         "--skip-source", action="append", default=[],
@@ -157,6 +256,7 @@ def main() -> int:
             dry_run=args.dry_run,
             skip_sources=args.skip_source,
             superseded=superseded,
+            retain_after=args.retain_after,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"archive-orphans: {exc}", file=sys.stderr)

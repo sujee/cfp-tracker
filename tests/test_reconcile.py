@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Integration tests for current-run CFP identity and note replacement."""
+"""Integration tests for CFP identity, revision renames, and duplicate merges."""
 from __future__ import annotations
 
 import importlib.util
@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -69,7 +70,7 @@ class ReconcileTest(unittest.TestCase):
             superseded=result.superseded,
         )
 
-    def test_deadline_extension_migrates_curation_and_supersedes_old_path(self) -> None:
+    def test_deadline_extension_updates_and_renames_existing_note(self) -> None:
         original = row()
         self.assertEqual(writer.upsert(self.data, original, today="2026-11-01T00:00:00"), "new")
         old_path = writer.note_path(self.data, original)
@@ -79,10 +80,12 @@ class ReconcileTest(unittest.TestCase):
         result = reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01T00:00:00")
         new_path = writer.note_path(self.data, current)
         self.assertEqual(result.produced, {new_path.relative_to(self.data).as_posix()})
-        self.assertEqual(result.superseded, {old_path.relative_to(self.data).as_posix()})
+        self.assertFalse(result.superseded)
+        self.assertFalse(old_path.exists())
         self.assertEqual(result.summaries["developers.events"]["updated"], 1)
 
         fm, body = writer._read_frontmatter(new_path)
+        self.assertNotIn("replaces", fm)
         self.assertTrue(fm["shortlist"])
         self.assertTrue(fm["dismissed"])
         self.assertEqual(fm["submissions"], ["[[My talk]]"])
@@ -93,8 +96,131 @@ class ReconcileTest(unittest.TestCase):
 
         self.archive(result)
         self.assertFalse(old_path.exists())
-        self.assertTrue((self.archive_dir / old_path.relative_to(self.data)).is_file())
+        self.assertFalse((self.archive_dir / old_path.relative_to(self.data)).exists())
         self.assertTrue(new_path.is_file())
+
+    def test_revision_read_failure_preserves_original_and_writes_no_target(self) -> None:
+        original = row()
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
+        old_path = writer.note_path(self.data, original)
+        self.curate(old_path)
+        before = old_path.read_bytes()
+        current = row(cfp_close="2026-12-15")
+        new_path = writer.note_path(self.data, current)
+        original_read = Path.read_text
+
+        def fail_old_read(path, *args, **kwargs):
+            if path == old_path:
+                raise OSError("simulated predecessor read failure")
+            return original_read(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "read_text", new=fail_old_read):
+            with self.assertRaisesRegex(OSError, "predecessor read failure"):
+                writer.upsert(
+                    self.data,
+                    current,
+                    previous_path=old_path,
+                    target_path=new_path,
+                    deduplicate=False,
+                    allow_source_takeover=True,
+                )
+        self.assertEqual(old_path.read_bytes(), before)
+        self.assertFalse(new_path.exists())
+
+    def test_revision_write_failure_recovers_from_single_renamed_note(self) -> None:
+        original = row()
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
+        old_path = writer.note_path(self.data, original)
+        self.curate(old_path)
+        before = old_path.read_bytes()
+        current = row(cfp_close="2026-12-15")
+        new_path = writer.note_path(self.data, current)
+
+        with mock.patch.object(writer, "_write_if_changed", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                reconcile_rows(self.data, {"developers.events": [current]})
+
+        self.assertFalse(old_path.exists())
+        self.assertEqual(new_path.read_bytes(), before)
+        result = reconcile_rows(self.data, {"developers.events": [current]})
+        fm, body = writer._read_frontmatter(new_path)
+        self.assertEqual(writer._as_str(fm["cfp_close"]), "2026-12-15")
+        self.assertTrue(fm["shortlist"])
+        self.assertNotIn("replaces", fm)
+        self.assertFalse(result.superseded)
+        self.assertIn("Bring the demo.", body)
+        self.assertFalse(old_path.exists())
+
+    def test_partial_write_leaves_renamed_original_intact(self) -> None:
+        original = row()
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
+        old_path = writer.note_path(self.data, original)
+        self.curate(old_path)
+        before = old_path.read_bytes()
+        current = row(cfp_close="2026-12-15")
+        new_path = writer.note_path(self.data, current)
+        real_fdopen = writer.os.fdopen
+
+        class PartialFailureStream:
+            def __init__(self, descriptor):
+                self.stream = real_fdopen(descriptor, "w", encoding="utf-8")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def write(self, text):
+                self.stream.write(text[:40])
+                raise OSError("simulated partial write")
+
+            def flush(self):
+                self.stream.flush()
+
+            def fileno(self):
+                return self.stream.fileno()
+
+        with mock.patch.object(
+            writer.os, "fdopen", side_effect=lambda fd, *args, **kwargs: PartialFailureStream(fd)
+        ):
+            with self.assertRaisesRegex(OSError, "partial write"):
+                reconcile_rows(self.data, {"developers.events": [current]})
+
+        self.assertFalse(old_path.exists())
+        self.assertEqual(new_path.read_bytes(), before)
+        self.assertFalse(list(new_path.parent.glob(f".{new_path.name}.*.tmp")))
+
+        result = reconcile_rows(self.data, {"developers.events": [current]})
+        fm, body = writer._read_frontmatter(new_path)
+        self.assertTrue(fm["shortlist"])
+        self.assertNotIn("replaces", fm)
+        self.assertFalse(result.superseded)
+        self.assertIn("Bring the demo.", body)
+
+    def test_revision_with_duplicate_merge_records_only_duplicate_lineage(self) -> None:
+        original = row()
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
+        original_path = writer.note_path(self.data, original)
+        self.curate(original_path)
+        duplicate = row(name="Example Summit and Conference 2027", source="open-tech-cfps")
+        writer.upsert(self.data, duplicate, deduplicate=False, allow_source_takeover=True)
+        duplicate_path = writer.note_path(self.data, duplicate)
+
+        current = row(cfp_close="2026-12-15")
+        result = reconcile_rows(self.data, {"developers.events": [current]})
+        target = writer.note_path(self.data, current)
+        duplicate_rel = duplicate_path.relative_to(self.data).as_posix()
+
+        self.assertFalse(original_path.exists())
+        self.assertEqual(result.superseded, {duplicate_rel})
+        fm, body = writer._read_frontmatter(target)
+        self.assertEqual(fm["replaces"], [duplicate_rel])
+        self.assertTrue(fm["shortlist"])
+        self.assertIn("Bring the demo.", body)
+        self.archive(result)
+        self.assertTrue(target.is_file())
+        self.assertFalse(duplicate_path.exists())
 
     def test_active_lower_priority_source_takes_over_stale_owner(self) -> None:
         original = row(name="SCaLE 24x")
@@ -169,20 +295,28 @@ class ReconcileTest(unittest.TestCase):
         self.assertTrue(later_path.is_file())
         self.assertFalse(earlier_path.exists())
 
-    def test_same_properties_still_write_a_missing_canonical_target(self) -> None:
+    def test_same_properties_rename_legacy_path_to_canonical_target(self) -> None:
         current = row()
-        writer.upsert(self.data, current)
+        writer.upsert(self.data, current, today="2026-11-01T00:00:00")
         canonical = writer.note_path(self.data, current)
         legacy = canonical.with_name("legacy-name.md")
         canonical.rename(legacy)
 
-        result = reconcile_rows(self.data, {"developers.events": [current]})
+        result = reconcile_rows(
+            self.data, {"developers.events": [current]}, today="2026-12-01T00:00:00"
+        )
         self.assertTrue(canonical.is_file())
+        self.assertFalse(legacy.exists())
         self.assertIn(canonical.relative_to(self.data).as_posix(), result.produced)
-        self.assertIn(legacy.relative_to(self.data).as_posix(), result.superseded)
+        self.assertFalse(result.superseded)
+        self.assertEqual(result.summaries["developers.events"]["updated"], 1)
+        fm, _ = writer._read_frontmatter(canonical)
+        self.assertEqual(writer._as_str(fm["updated"]), "2026-11-01T00:00:00")
+        self.assertNotIn("replaces", fm)
         self.archive(result)
         self.assertTrue(canonical.is_file())
         self.assertFalse(legacy.exists())
+        self.assertFalse((self.archive_dir / legacy.relative_to(self.data)).exists())
 
     def test_sticky_allowed_event_type_survives_deadline_change(self) -> None:
         original = row(name="Community Meetup 2027", event_type="conference")
@@ -194,7 +328,7 @@ class ReconcileTest(unittest.TestCase):
         fm, _ = writer._read_frontmatter(path)
         self.assertEqual(fm["event_type"], "conference")
 
-    def test_unarchived_predecessor_does_not_overwrite_live_edits(self) -> None:
+    def test_later_refresh_preserves_edits_after_revision(self) -> None:
         original = row()
         writer.upsert(self.data, original, today="2026-11-01T00:00:00")
         self.curate(writer.note_path(self.data, original))
@@ -202,7 +336,7 @@ class ReconcileTest(unittest.TestCase):
         reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-01T00:00:00")
         canonical = writer.note_path(self.data, current)
         text = canonical.read_text(encoding="utf-8")
-        self.assertIn("replaces:", text)
+        self.assertNotIn("replaces:", text)
         text = text.replace("priority: high", "live_edit: keep-me")
         text = text.replace("shortlist: true", "shortlist: false")
         text = text.replace("dismissed: true", "dismissed: false")
@@ -224,7 +358,7 @@ class ReconcileTest(unittest.TestCase):
         reconcile_rows(self.data, {"developers.events": [current]}, today="2026-12-03")
         self.assertEqual(canonical.read_bytes(), before)
 
-    def test_standalone_superseded_manifest_retires_curated_predecessor(self) -> None:
+    def test_standalone_revision_has_no_superseded_manifest_entry(self) -> None:
         original = row()
         writer.upsert(self.data, original)
         old_path = writer.note_path(self.data, original)
@@ -242,11 +376,11 @@ class ReconcileTest(unittest.TestCase):
         )
         self.assertEqual(counts["found"], 1)
         new_path = writer.note_path(self.data, current)
-        self.assertTrue(old_path.is_file())
+        self.assertFalse(old_path.exists())
         produced = archiver.load_manifests([produced_path])
         superseded = archiver.load_manifests([superseded_path])
         self.assertEqual(produced, {new_path.relative_to(self.data).as_posix()})
-        self.assertEqual(superseded, {old_path.relative_to(self.data).as_posix()})
+        self.assertFalse(superseded)
 
         archiver.archive_orphans(
             self.data, self.archive_dir, produced, superseded=superseded
@@ -254,8 +388,9 @@ class ReconcileTest(unittest.TestCase):
         fm, body = writer._read_frontmatter(new_path)
         self.assertTrue(fm["shortlist"])
         self.assertIn("Bring the demo.", body)
-        self.assertIn("replaces", fm)
+        self.assertNotIn("replaces", fm)
         self.assertFalse(old_path.exists())
+        self.assertFalse((self.archive_dir / old_path.relative_to(self.data)).exists())
 
     def test_invalid_preferred_target_falls_back_to_valid_source_note(self) -> None:
         import contextlib
@@ -310,7 +445,7 @@ class ReconcileTest(unittest.TestCase):
         fm, _ = writer._read_frontmatter(target)
         self.assertEqual(fm["event_type"], "conference")
 
-    def test_second_path_migration_uses_live_descendant_not_old_ancestor(self) -> None:
+    def test_successive_revisions_keep_live_descendant_edits(self) -> None:
         original = row(cfp_close="2026-12-01")
         writer.upsert(self.data, original, today="2026-11-01T00:00:00")
         first_path = writer.note_path(self.data, original)
@@ -321,7 +456,7 @@ class ReconcileTest(unittest.TestCase):
         )
         second_path = writer.note_path(self.data, intermediate)
         text = second_path.read_text(encoding="utf-8")
-        self.assertIn("replaces:", text)
+        self.assertNotIn("replaces:", text)
         text = text.replace("priority: high", "live_edit: keep-me")
         text = text.replace("shortlist: true", "shortlist: false")
         text = text.replace("dismissed: true", "dismissed: false")
@@ -345,15 +480,32 @@ class ReconcileTest(unittest.TestCase):
         self.assertEqual(writer._as_str(fm["created"]), "2026-11-01T00:00:00")
         self.assertIn("Current intermediate edit.", body)
         self.assertNotIn("Bring the demo.", body)
-        self.assertEqual(
-            set(fm["replaces"]),
-            {
-                first_path.relative_to(self.data).as_posix(),
-                second_path.relative_to(self.data).as_posix(),
-            },
+        self.assertNotIn("replaces", fm)
+        self.assertFalse(result.superseded)
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
+
+    def test_revision_preserves_existing_duplicate_lineage_without_adding_old_path(self) -> None:
+        original = row()
+        writer.upsert(self.data, original)
+        old_path = writer.note_path(self.data, original)
+        duplicate_rel = "2026/2026-01-01_merged-duplicate.md"
+        old_path.write_text(
+            old_path.read_text(encoding="utf-8").replace(
+                "updated:", f"replaces: [{duplicate_rel}]\nupdated:", 1
+            ),
+            encoding="utf-8",
         )
-        self.assertIn(first_path.relative_to(self.data).as_posix(), result.superseded)
-        self.assertIn(second_path.relative_to(self.data).as_posix(), result.superseded)
+
+        current = row(cfp_close="2026-12-15")
+        result = reconcile_rows(self.data, {"developers.events": [current]})
+        target = writer.note_path(self.data, current)
+        fm, _ = writer._read_frontmatter(target)
+
+        self.assertEqual(fm["replaces"], [duplicate_rel])
+        self.assertFalse(result.superseded)
+        self.assertFalse(old_path.exists())
+        self.assertTrue(target.is_file())
 
     def test_reversion_uses_live_descendant_and_never_replaces_itself(self) -> None:
         original = row(name="Community Meetup 2027", event_type="conference")
@@ -391,8 +543,9 @@ class ReconcileTest(unittest.TestCase):
         self.assertFalse(fm["shortlist"])
         self.assertIn("Live descendant edit.", body)
         self.assertNotIn("Original ancestor notes.", body)
-        self.assertNotIn(final_path.relative_to(self.data).as_posix(), fm["replaces"])
-        self.assertIn("replaces", fm)
+        self.assertNotIn("replaces", fm)
+        self.assertFalse(first_path.exists())
+        self.assertFalse(second_path.exists())
 
     def test_fallback_does_not_supersede_paused_url_less_manual_note(self) -> None:
         manual = row(cfp_url="", source="manual")

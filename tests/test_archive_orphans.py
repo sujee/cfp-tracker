@@ -87,6 +87,145 @@ class TestFindOrphans(ArchiveTestCase):
         self.assertFalse((self.data / "2026/b.md").is_file())
         self.assertTrue((self.archive / "2026/b.md").is_file())
 
+    def test_rolling_window_keeps_eligible_orphans_on_or_after_cutoff(self) -> None:
+        for rel, close in (
+            ("2026/boundary.md", "2026-08-17"),
+            ("2026/recent.md", "2026-11-01"),
+            ("2026/old.md", "2026-08-16"),
+        ):
+            self.note(
+                rel,
+                f"---\ntype: cfp\nevent_name: Example Conference\n"
+                f"event_type: conference\ncfp_close: {close}\n---\n\n## Notes\n",
+            )
+
+        moved = arch.find_orphans(self.data, set(), retain_after="2026-08-17")
+
+        self.assertEqual(moved, ["2026/old.md"])
+
+    def test_rolling_window_does_not_override_exclusions(self) -> None:
+        import config
+        from unittest import mock
+
+        notes = {
+            "2026/name.md": ("Ignored Conference", "conference", "ai"),
+            "2026/type.md": ("Community Meetup", "meetup", "ai"),
+            "2026/topic.md": ("Security Conference", "conference", "blocked-topic"),
+            "2026/eligible.md": ("Eligible Conference", "conference", "ai"),
+        }
+        for rel, (name, event_type, topic) in notes.items():
+            self.note(
+                rel,
+                f"---\ntype: cfp\nevent_name: {name}\nevent_type: {event_type}\n"
+                f"cfp_close: 2026-11-01\ntopics: [{topic}]\n---\n\n## Notes\n",
+            )
+        with (
+            mock.patch.object(config, "IGNORE_NAMES", ["ignored"]),
+            mock.patch.object(config, "IGNORE_TOPICS", ["blocked-topic"]),
+            mock.patch.object(config, "EVENT_TYPES", ["conference"]),
+        ):
+            moved = arch.find_orphans(self.data, set(), retain_after="2026-08-17")
+        self.assertEqual(moved, ["2026/name.md", "2026/topic.md", "2026/type.md"])
+
+    def test_rolling_window_does_not_protect_merged_duplicate(self) -> None:
+        self.note(
+            "2026/duplicate.md",
+            "---\ntype: cfp\nevent_name: Example Conference\ncfp_close: 2026-11-01\n---\n",
+        )
+        moved = arch.find_orphans(
+            self.data, set(), superseded={"2026/duplicate.md"}, retain_after="2026-08-17"
+        )
+        self.assertEqual(moved, ["2026/duplicate.md"])
+
+    def test_rolling_window_checks_identity_against_current_notes(self) -> None:
+        current = (
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/cfp\n"
+            "cfp_close: 2026-11-22\n---\n"
+        )
+        old = (
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/cfp\n"
+            "cfp_close: 2026-11-01\n---\n"
+        )
+        self.note("2026/current.md", current)
+        self.note("2026/old.md", old)
+        moved = arch.find_orphans(
+            self.data, {"2026/current.md"}, retain_after="2026-08-17"
+        )
+        self.assertEqual(moved, ["2026/old.md"])
+
+    def test_rolling_window_event_page_fallback_detects_changed_cfp_url(self) -> None:
+        current = (
+            "---\ntype: cfp\nevent_name: Example Conference 2027\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/new-cfp\n"
+            "cfp_close: 2026-11-22\n---\n"
+        )
+        old = (
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/old-cfp\n"
+            "cfp_close: 2026-11-01\n---\n"
+        )
+        self.note("2026/current.md", current)
+        self.note("2026/old.md", old)
+        moved = arch.find_orphans(
+            self.data, {"2026/current.md"}, retain_after="2026-08-17"
+        )
+        self.assertEqual(moved, ["2026/old.md"])
+
+    def test_event_page_fallback_does_not_merge_a_suffix_edition(self) -> None:
+        current = (
+            "---\ntype: cfp\nevent_name: Example Conference Workshop\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/workshop-cfp\n"
+            "cfp_close: 2026-11-22\n---\n"
+        )
+        main_event = (
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: 2027-01-01\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/main-cfp\n"
+            "cfp_close: 2026-11-01\n---\n"
+        )
+        self.note("2026/current.md", current)
+        self.note("2026/main-event.md", main_event)
+        moved = arch.find_orphans(
+            self.data, {"2026/current.md"}, retain_after="2026-08-17"
+        )
+        self.assertFalse(moved)
+        self.assertTrue((self.data / "2026/main-event.md").is_file())
+
+    def test_event_page_fallback_does_not_match_placeholder_dates(self) -> None:
+        current = self.note(
+            "2026/current.md",
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: TBA\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/new-cfp\n"
+            "cfp_close: 2026-11-22\n---\n",
+        )
+        self.note(
+            "2026/old.md",
+            "---\ntype: cfp\nevent_name: Example Conference\nevent_date: TBA\n"
+            "event_url: https://example.test\ncfp_url: https://example.test/old-cfp\n"
+            "cfp_close: 2026-11-01\n---\n",
+        )
+        moved = arch.find_orphans(
+            self.data, {current}, retain_after="2026-08-17"
+        )
+        self.assertFalse(moved)
+
+    def test_no_retention_date_archives_even_a_future_orphan(self) -> None:
+        self.note(
+            "2026/future.md",
+            "---\ntype: cfp\nevent_name: Future Conference\ncfp_close: 2027-01-01\n---\n",
+        )
+        moved = arch.find_orphans(self.data, set())
+        self.assertEqual(moved, ["2026/future.md"])
+
+    def test_non_iso_close_does_not_receive_rolling_window_protection(self) -> None:
+        self.note(
+            "2026/unstated.md",
+            "---\ntype: cfp\nevent_name: Example Conference\ncfp_close: Unstated\n---\n",
+        )
+        moved = arch.find_orphans(self.data, set(), retain_after="2026-08-17")
+        self.assertEqual(moved, ["2026/unstated.md"])
+
     def test_non_cfp_note_is_left_alone(self) -> None:
         self.note("2026/a.md")
         self.note("2026/readme.md", "# just a note\n\nno frontmatter\n")

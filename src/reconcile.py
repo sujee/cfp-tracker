@@ -47,6 +47,7 @@ class Existing:
 class ReconcileResult:
     summaries: dict[str, dict[str, int]]
     produced: set[str]
+    # Stored duplicate notes whose state and lineage moved into a survivor.
     superseded: set[str]
 
     def summary_rows(self) -> list[dict]:
@@ -244,8 +245,8 @@ def reconcile_rows(
 
     Current rows decide source ownership. Existing notes are used for matching,
     curation, and timestamps rather than as permanent higher-priority vetoes.
-    Paths of replaced notes are returned separately so archiving can move them
-    after their curated state has been migrated.
+    A one-to-one revision updates and renames its existing note. Only duplicate
+    notes merged into that survivor are returned for archiving.
     """
     data_dir = Path(data_dir)
     skipped_sources = set(skipped_sources or ())
@@ -380,10 +381,7 @@ def reconcile_rows(
                 if note.path not in protected_paths
             }
             target_rel = candidate.target.relative_to(data_dir).as_posix()
-            lineage_paths = [note.path for note in unique_duplicates.values()]
-            if predecessor != candidate.target and predecessor not in protected_paths:
-                lineage_paths.append(predecessor)
-            for lineage_path in lineage_paths:
+            for lineage_path in [note.path for note in unique_duplicates.values()]:
                 writer.prune_lineage_reference(lineage_path, target_rel)
             merged = writer.merge_curation(
                 candidate.target,
@@ -395,8 +393,6 @@ def reconcile_rows(
                 summaries[candidate.source]["updated"] += 1
 
             produced.add(candidate.target.relative_to(data_dir).as_posix())
-            if predecessor != candidate.target:
-                superseded.add(predecessor.relative_to(data_dir).as_posix())
             for note in unique_duplicates.values():
                 superseded.add(note.path.relative_to(data_dir).as_posix())
             break

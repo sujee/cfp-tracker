@@ -168,6 +168,64 @@ class PipelineTest(unittest.TestCase):
             self.assertEqual(context.input_dir, (self.root / "input").resolve())
             self.assertTrue(context.offline)
 
+    def test_default_lookback_is_90_days(self) -> None:
+        contexts = []
+
+        def collect(name, context):
+            contexts.append(context)
+            return []
+
+        argv = self.argv("--today", "2026-11-15", "--no-archive")
+        with mock.patch.object(config, "INPUT_SOURCES", ["developers.events"]):
+            self.assertEqual(self.run_main(argv, collect_source=collect), 0)
+        self.assertEqual(len(contexts), 1)
+        self.assertEqual(contexts[0].cutoff, datetime.date(2026, 8, 17))
+
+    def test_archiver_receives_the_90_day_retention_cutoff(self) -> None:
+        archived = mock.Mock(return_value=[])
+        argv = self.argv("--today", "2026-11-15")
+        with mock.patch.object(config, "INPUT_SOURCES", ["developers.events"]):
+            self.assertEqual(
+                self.run_main(
+                    argv,
+                    collect_source=mock.Mock(return_value=[]),
+                    _archive_orphans=archived,
+                ),
+                0,
+            )
+        self.assertEqual(
+            archived.call_args.kwargs["retain_after"], datetime.date(2026, 8, 17)
+        )
+
+    def test_full_pipeline_retains_recent_orphans_and_archives_older_ones(self) -> None:
+        recent = sample_row(
+            name="Recent Summit",
+            cfp_close="2026-11-01",
+            cfp_url="https://example.test/recent-cfp",
+        )
+        older = sample_row(
+            name="Older Summit",
+            cfp_close="2026-08-16",
+            cfp_url="https://example.test/older-cfp",
+        )
+        recent_path = writer.note_path(self.data, recent)
+        older_path = writer.note_path(self.data, older)
+        writer.upsert(self.data, recent)
+        writer.upsert(self.data, older)
+
+        with mock.patch.object(config, "INPUT_SOURCES", ["developers.events"]):
+            result = self.run_main(
+                self.argv("--today", "2026-11-15"),
+                collect_source=mock.Mock(return_value=[]),
+            )
+
+        self.assertEqual(result, 0)
+        self.assertTrue(recent_path.is_file())
+        self.assertFalse(older_path.exists())
+        self.assertTrue(
+            (self.archive / older_path.relative_to(self.data)).is_file()
+        )
+
     def test_missing_manual_input_protects_existing_manual_notes(self) -> None:
         note = writer.note_path(self.data, sample_row(source="manual"))
         writer.upsert(self.data, sample_row(source="manual"))
@@ -201,6 +259,35 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(self.archive.exists())
 
+    def test_revision_renames_existing_note_even_with_no_archive(self) -> None:
+        original = sample_row()
+        writer.upsert(self.data, original, today="2026-11-01T00:00:00")
+        old_path = writer.note_path(self.data, original)
+        old_path.write_text(
+            old_path.read_text(encoding="utf-8")
+            .replace("shortlist: false", "shortlist: true")
+            .replace("_Add notes here._", "Keep these notes."),
+            encoding="utf-8",
+        )
+        current = sample_row(cfp_close="2027-02-15")
+        new_path = writer.note_path(self.data, current)
+
+        with mock.patch.object(config, "INPUT_SOURCES", ["developers.events"]):
+            result = self.run_main(
+                self.argv("--today", "2026-11-15", "--no-archive"),
+                collect_source=mock.Mock(return_value=[current]),
+            )
+
+        self.assertEqual(result, 0)
+        self.assertFalse(old_path.exists())
+        self.assertTrue(new_path.is_file())
+        self.assertFalse(self.archive.exists())
+        fm, body = writer._read_frontmatter(new_path)
+        self.assertTrue(fm["shortlist"])
+        self.assertIn("Keep these notes.", body)
+        self.assertNotIn("replaces", fm)
+        self.assertEqual(writer._as_str(fm["created"]), "2026-11-01T00:00:00")
+
     def test_shared_today_reaches_writer_stamps(self) -> None:
         with mock.patch.object(config, "INPUT_SOURCES", ["developers.events"]):
             result = self.run_main(
@@ -215,7 +302,7 @@ class PipelineTest(unittest.TestCase):
     def test_prestige_runs_after_archive(self) -> None:
         events = []
 
-        def archived(*args):
+        def archived(*args, **kwargs):
             events.append("archive")
             return []
 

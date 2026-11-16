@@ -15,7 +15,7 @@ Require an actionable `cfp_link`; do not invent one for rows such as the snapsho
 
 ## Integration guidance
 
-Select `cfp >= cutoff`, map `link`→`event_url`, `cfp_link`→`cfp_url`, `conference`→name, and start/place fields conservatively. Split and trim `sub`; preserve source deadline precision during parsing before deriving the note's date-only close. Dedupe by normalized name plus close date, then rely on the writer's compatible-name gate for cross-path URL matches—not a raw shared-URL rule. Leave country blank unless independently established. Proposed ownership is below TechConf Spain and above AgentConfs/confs.tech; measure post-dedupe unique speaking notes against the complete tracker before promotion.
+Select `cfp >= cutoff`, map `link`→`event_url`, `cfp_link`→`cfp_url`, `conference`→name, and start/place fields conservatively. Split and trim `sub`; preserve source deadline precision during parsing before deriving the note's date-only close. Dedupe by normalized name plus close date, then rely on the writer's compatible-name gate for cross-path URL matches—not a raw shared-URL rule. Leave country blank unless independently established. Ownership is below cfp.ninja and above confs.tech among current rows.
 
 ## Evidence
 
