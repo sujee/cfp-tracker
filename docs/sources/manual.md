@@ -3,17 +3,25 @@
 - Status: Implemented
 - Source: Personal files under `input/`
 - Adapter: [`src/process-manual-input.py`](../../src/process-manual-input.py)
-- Verification: 2026-11-12
+- Verification: 2026-11-14
 
 ## Data and access
 
-`MANUAL_INPUT_FILES` lists the files to read. Relative paths must stay inside `input/`.
-A missing configured file aborts collection before note writes. An empty list produces no rows.
+The adapter reads every file below `input/` recursively. It ignores `input/archived/`.
+It follows directory symlinks and reads each directory once to avoid cycles.
+Filename extensions do not limit processing. Move inactive files into `input/archived/`.
+Every file must contain UTF-8 text. Unreadable files or directories abort collection before note writes.
+Remove `manual` from `INPUT_SOURCES` to disable manual input.
 
 Two file shapes are supported:
 
 - Markdown CFP tables.
 - Checklists with `- [Conference](https://event-url/)` bullets. `*` and `+` bullets also work.
+
+Other content produces no rows.
+
+Remove the obsolete `MANUAL_INPUT_FILES` setting from `src/config_local.py`.
+Unknown settings stop the run.
 
 Table parsing needs the expected CFP header and a separator row. Column names define the mapping.
 Reordered columns are supported. Unrelated tables are ignored. CFP-open values are discarded.

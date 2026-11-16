@@ -11,6 +11,7 @@ Offline. ``tests/fixtures/manual/input.sample.md`` is a copy of the real
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -34,20 +35,17 @@ def load_module(path: Path, name: str):
 
 pmi = load_module(ROOT / "src" / "process-manual-input.py", "pmi")
 import cfp_writer as writer  # noqa: E402
-import config  # noqa: E402  shared by src manuals and tests config patches
 from reconcile import reconcile_rows  # noqa: E402
 
 SAMPLE = (FIX / "input.sample.md").read_text(encoding="utf-8")
 
 
 def run_manual_cli(arguments: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
-    """Run the real CLI without depending on the developer's local config."""
+    """Run the real CLI in a subprocess."""
     src_dir = ROOT / "src"
     code = (
         "import runpy, sys\n"
         f"sys.path.insert(0, {str(src_dir)!r})\n"
-        "import config\n"
-        "config.MANUAL_INPUT_FILES = ['gmail1.md', 'conferences-to-check.md']\n"
         f"runpy.run_path({str(src_dir / 'process-manual-input.py')!r}, run_name='__main__')\n"
     )
     return subprocess.run(
@@ -153,39 +151,75 @@ class TestParseRows(unittest.TestCase):
 
 
 class TestManualInputFiles(unittest.TestCase):
-    def test_only_listed_files_are_read(self) -> None:
+    def test_every_file_is_read_recursively_except_root_archived(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
-            for name in ("kept.md", "ignored.md"):
-                (directory / name).write_text(SAMPLE, encoding="utf-8")
-            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["kept.md"]):
-                files = pmi.manual_input_files(directory)
-            self.assertEqual([p.name for p in files], ["kept.md"])
+            expected = [
+                directory / "a.md",
+                directory / "b.txt",
+                directory / "nested" / "c.md",
+            ]
+            for path in expected + [directory / "archived" / "old.md"]:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(SAMPLE, encoding="utf-8")
+            files = pmi.manual_input_files(directory)
+            self.assertEqual(
+                [path.relative_to(directory).as_posix() for path in files],
+                ["a.md", "b.txt", "nested/c.md"],
+            )
+            self.assertEqual(set(files), set(expected))
 
-    def test_missing_configured_file_fails_loudly(self) -> None:
+    def test_directory_symlinks_are_followed_without_cycles(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["typo.md"]):
-                with self.assertRaisesRegex(FileNotFoundError, "typo.md"):
-                    pmi.manual_input_files(Path(tmp))
+            root = Path(tmp)
+            input_dir = root / "input"
+            input_dir.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "manual.md").write_text(SAMPLE, encoding="utf-8")
+            (input_dir / "current").symlink_to(outside, target_is_directory=True)
+            (outside / "back").symlink_to(input_dir, target_is_directory=True)
 
-    def test_absolute_and_parent_paths_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            for value in ("/etc/passwd", "../gmail1.md"):
-                with self.subTest(value=value):
-                    with mock.patch.object(config, "MANUAL_INPUT_FILES", [value]):
-                        with self.assertRaisesRegex(ValueError, "inside"):
-                            pmi.manual_input_files(Path(tmp))
+            files = pmi.manual_input_files(input_dir)
 
-    def test_empty_list_disables_manual_input(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(config, "MANUAL_INPUT_FILES", []):
-                self.assertEqual(pmi.manual_input_files(Path(tmp)), [])
+            self.assertEqual(
+                [path.relative_to(input_dir).as_posix() for path in files],
+                ["current/manual.md"],
+            )
 
-    def test_cli_reports_config_error_instead_of_traceback(self) -> None:
+    def test_unreadable_subdirectory_aborts_collection(self) -> None:
+        if os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0):
+            self.skipTest("directory permissions cannot reliably deny access")
         with tempfile.TemporaryDirectory() as tmp:
-            with mock.patch.object(config, "MANUAL_INPUT_FILES", ["typo.md"]):
-                with mock.patch.object(sys, "argv", ["x", "--input", tmp, "--out", str(Path(tmp) / "data")]):
-                    self.assertEqual(pmi.main(), 1)
+            directory = Path(tmp)
+            denied = directory / "denied"
+            denied.mkdir()
+            (denied / "manual.md").write_text(SAMPLE, encoding="utf-8")
+            denied.chmod(0)
+            try:
+                with self.assertRaises(PermissionError):
+                    pmi.collect_rows(directory)
+            finally:
+                denied.chmod(0o700)
+
+    def test_empty_directory_returns_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(pmi.manual_input_files(Path(tmp)), [])
+
+    def test_archived_files_do_not_abort_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "archived").mkdir()
+            (directory / "archived" / "binary.dat").write_bytes(b"\xff")
+            self.assertEqual(pmi.collect_rows(directory), [])
+
+    def test_cli_reports_missing_input_instead_of_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing"
+            with mock.patch.object(
+                sys, "argv", ["x", "--input", str(missing), "--out", str(Path(tmp) / "data")]
+            ):
+                self.assertEqual(pmi.main(), 1)
 
 
 class TestCollectRows(unittest.TestCase):
@@ -204,7 +238,6 @@ class TestCollectRows(unittest.TestCase):
 | Impossible Date | London, UK | Oct 2026 | Early 2027 | Feb 31, 2027 | AI |
 """, encoding="utf-8")
         with (
-            mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]),
             mock.patch("cfp_writer.upsert_counted") as upsert_counted,
             mock.patch("cfp_writer.upsert") as upsert,
         ):
@@ -227,8 +260,7 @@ class TestCollectRows(unittest.TestCase):
 | --- | --- | --- | --- | --- | --- |
 | Example Conf | Online | Oct 2026 | Unstated | Spring 2027 | AI |
 """, encoding="utf-8")
-        with mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]):
-            rows = pmi.collect_rows(self.input_dir)
+        rows = pmi.collect_rows(self.input_dir)
 
         self.assertEqual(len(rows), 1)
         current = rows[0]
@@ -274,7 +306,6 @@ class TestCollectRows(unittest.TestCase):
             "Down", "https://down.example/", error="TimeoutError", failed=True
         )
         with (
-            mock.patch.object(config, "MANUAL_INPUT_FILES", ["manual.md"]),
             mock.patch.object(pmi.watchlist, "resolve", return_value=failed),
             mock.patch("cfp_writer.upsert_counted") as upsert_counted,
             mock.patch("cfp_writer.upsert") as upsert,
@@ -285,10 +316,10 @@ class TestCollectRows(unittest.TestCase):
         upsert_counted.assert_not_called()
         upsert.assert_not_called()
 
-    def test_missing_configured_source_raises(self) -> None:
-        with mock.patch.object(config, "MANUAL_INPUT_FILES", ["missing.md"]):
-            with self.assertRaisesRegex(FileNotFoundError, "missing.md"):
-                pmi.collect_rows(self.input_dir)
+    def test_missing_input_directory_raises(self) -> None:
+        missing = self.input_dir / "missing"
+        with self.assertRaisesRegex(FileNotFoundError, "input directory not found"):
+            pmi.collect_rows(missing)
 
 
 class TestWatchlistEndToEnd(unittest.TestCase):
@@ -357,9 +388,6 @@ class TestWatchlistEndToEnd(unittest.TestCase):
             mock.patch.object(pmi.watchlist, "resolve", return_value=pmi.watchlist.CfpResult(
                 "Down", "https://down.example", error="TimeoutError", failed=True
             )),
-            mock.patch.object(config, "MANUAL_INPUT_FILES", [
-                "gmail1.md", "conferences-to-check.md",
-            ]),
             mock.patch.object(sys, "argv", [
                 "x", "--out", str(self.out), "--input", str(self.input_dir),
             ]),
@@ -369,23 +397,35 @@ class TestWatchlistEndToEnd(unittest.TestCase):
 
 
 class TestMainEndToEnd(unittest.TestCase):
-    def test_runs_offline_and_writes_only_the_configured_file(self) -> None:
+    def test_processes_every_file_and_skips_archived(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "data"
             input_dir = Path(tmp) / "input"
             input_dir.mkdir()
-            # The test config names gmail1.md; an identically-shaped table next
-            # to it is not a source just because it lands in the directory.
             shutil.copy(FIX / "input.sample.md", input_dir / "gmail1.md")
-            shutil.copy(FIX / "input.sample.md", input_dir / "scratch.md")
-            # The configured checklist exists, but no links means this table-only
-            # test must not need the network. The duplicate scratch table is not.
             (input_dir / "conferences-to-check.md").write_text("# Nothing selected\n")
+            table = """\
+| Conf Name | Location | CFP Open | CFP Close | Event/Dates | Topics |
+| --- | --- | --- | --- | --- | --- |
+| {name} | Online | Jan 2028 | Dec 31, 2027 | May 7, 2028 | AI |
+"""
+            nested = input_dir / "nested"
+            nested.mkdir()
+            (nested / "extra.txt").write_text(
+                table.format(name="Extra Conference 2028"), encoding="utf-8"
+            )
+            archived = input_dir / "archived"
+            archived.mkdir()
+            (archived / "old.md").write_text(
+                table.format(name="Archived Conference 2028"), encoding="utf-8"
+            )
+
             proc = run_manual_cli(["--out", str(out), "--input", str(input_dir)])
+
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertIn("found 5 (new 5, updated 0, unchanged 0)", proc.stdout)
+            self.assertIn("found 6 (new 6, updated 0, unchanged 0)", proc.stdout)
             notes = sorted(out.rglob("*.md"))
-            self.assertEqual(len(notes), 5)
+            self.assertEqual(len(notes), 6)
             self.assertEqual(
                 {note.relative_to(out).as_posix() for note in notes},
                 {
@@ -394,8 +434,10 @@ class TestMainEndToEnd(unittest.TestCase):
                     "2027/2027_developerweek-2027-ai-devworld.md",
                     "2027/2027_qcon-london-2027.md",
                     "2027/2027_seattle-startup-summit-2027.md",
+                    "2027/2027-12-31_extra-conference-2028.md",
                 },
             )
+            self.assertFalse(list(out.rglob("*archived-conference*")))
             agentic = (out / "2027/2027_agentic-ai-summit-2027.md").read_text(encoding="utf-8")
             self.assertIn("\nevent_name: Agentic AI Summit 2027\n", agentic)
             self.assertNotIn("google.com/url", agentic)

@@ -158,23 +158,20 @@ to a default.
 |---|---|---|
 | `INPUT_SOURCES` | All seven sources | Sources to fetch. Remove a source to skip it. Its notes stay in `data/`. |
 | `CONFS_TECH_TOPICS` | `devops`, `opensource`, `python`, `ai` | Topic files to read from confs.tech. `general` is always included. An empty set reads every topic. |
-| `MANUAL_INPUT_FILES` | `[]` | Files under `input/` to read as manual input. The pipeline reads no other file. |
 | `EVENT_TYPES` | `conference`, `summit`, `workshop` | Event types to keep. The pipeline archives the other notes. |
 | `EVENT_TYPE_KEYWORDS` | Meetup, summit, workshop, hackathon, webinar aliases | Name patterns used to infer `event_type`. Order sets precedence. |
 | `IGNORE_NAMES` | `[]` | Event names to drop. Matches anywhere in the name, ignoring case. |
 | `IGNORE_TOPICS` | `[]` | Topics or names to drop. |
 
-`INPUT_SOURCES`, `EVENT_TYPES`, `CONFS_TECH_TOPICS`, `IGNORE_NAMES`, and `IGNORE_TOPICS`
-must be nonempty collections of nonempty strings, except the two ignore lists and
-`MANUAL_INPUT_FILES`, which accept an empty value. An invalid value stops the run before
-any source fetch.
+`INPUT_SOURCES`, `EVENT_TYPES`, and `CONFS_TECH_TOPICS` must be nonempty collections of
+nonempty strings. The two ignore lists also require strings, but they accept an empty value.
+An invalid value stops the run before any source fetch.
 
 Example:
 
 ```python
 INPUT_SOURCES = ["developers.events", "cfp.ninja", "manual"]
 EVENT_TYPES = ["conference", "summit"]
-MANUAL_INPUT_FILES = ["conferences-to-check.md"]
 IGNORE_NAMES = [".NET"]
 ```
 
@@ -251,10 +248,15 @@ that path when your vault uses another one.
 
 ## Manual input and watchlists
 
-`MANUAL_INPUT_FILES` lists files under `input/`. The pipeline reads no other Markdown file. A
-checklist or a scratch file stays invisible until you list it.
+The pipeline reads every file below `input/` recursively. It ignores `input/archived/`.
+It follows directory symlinks and reads each directory once to avoid cycles.
+Filename extensions do not limit processing. Every file must contain UTF-8 text.
+Unreadable files or directories abort collection before note writes.
 
-A listed file can hold a table:
+Move inactive files into `input/archived/`. Remove `manual` from `INPUT_SOURCES` to disable
+manual input. Remove the obsolete `MANUAL_INPUT_FILES` setting from `src/config_local.py`.
+
+A file can hold a table:
 
 ```md
 | Conference | Location | CFP Close |
@@ -262,7 +264,7 @@ A listed file can hold a table:
 | **[Example Conf](https://example.com/)** | Berlin, Germany | Nov 2026 |
 ```
 
-A listed file can also hold a checklist of event sites:
+A file can also hold a checklist of event sites:
 
 ```md
 - [Example Conf](https://example.com/)
@@ -298,7 +300,7 @@ overwrites an existing file, and `--no-archive` disables the stage.
 | A note shows `conflict: true` | Your curated value differs from the source. | Keep it, or remove the field from `curated_fields`. |
 | `event_type` is wrong | The pipeline infers the type once, then keeps it. | Edit the note, or add an alias to `EVENT_TYPE_KEYWORDS` before the first write. |
 | A source produced nothing | The source is missing from `INPUT_SOURCES`. | Add the name. |
-| A manual file is ignored | The file is not in `MANUAL_INPUT_FILES`. | Add the file name. |
+| A manual file is ignored | The file is in `input/archived/`, or manual input is disabled. | Move the file outside `input/archived/`, or enable `manual` in `INPUT_SOURCES`. |
 | A CFP link is dead | The hosting platform shut down. | Run `check-links.py`, then use the event URL. |
 
 ## Development

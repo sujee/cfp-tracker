@@ -23,8 +23,8 @@ which overrides the defaults in `src/config.py`; copy `src/config_local.example.
 Remove a source from the local list to skip it. Unmodified notes from that source stay in `data/`.
 A successful current replacement can supersede a lower-priority paused note after curation migration.
 Unknown or empty source lists fail the run. Sources: developers.events, cfp.ninja, confs.tech,
-adato-tracker, Open Tech CFPs, and any hand-curated rows in the files explicitly
-named in `MANUAL_INPUT_FILES` (`src/config_local.py`).
+adato-tracker, Open Tech CFPs, and every hand-curated file under `input/`, except
+`input/archived/`.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -179,8 +179,12 @@ operation without overwriting the archived note.
   the registry wins. A hand-set `tier` on a note that matches **no** row is kept, so a one-off
   can be ranked directly. `tier` is never compared against source data, so stamping it does not
   advance `updated`.
-- Manual input reads only the explicit `MANUAL_INPUT_FILES` list (`src/config_local.py`), not every
-  file in `input/`. Other Markdown checklists are ignored until added to that list.
+- Manual input processes every file below `input/` recursively. It ignores `input/archived/`.
+  Move inactive files into that folder. Remove `manual` from `INPUT_SOURCES` to disable manual input.
+  Every file must contain UTF-8 text. Unreadable files or directories abort collection before note writes.
+  The adapter follows directory symlinks and reads each directory once to avoid cycles.
+  Only recognized tables and website checklists produce rows. Other content is ignored.
+  Remove the obsolete `MANUAL_INPUT_FILES` setting from `src/config_local.py`.
 - Do not commit or push anything to git unless asked. Always ask permission first — never
   commit or push automatically.
 
@@ -199,7 +203,9 @@ Merged into `data/`:
 - **Open Tech CFPs** — public `open.json` + `closed.json`, CC BY 4.0, Sessionize-derived.
   Filter `cfp_close_utc`, not `status`; map only explicit travel/accommodation coverage to benefits.
   It ranks lowest and fills gaps.
-- **Manual input** — rows from `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config_local.py`); `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`. Explicitly closed submission pages and closes before `--today` are skipped.
+- **Manual input** — rows from every file below `input/`, except `input/archived/`.
+  `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`.
+  Explicitly closed submission pages and closes before `--today` are skipped.
 
 The reconciler compares source priority only among rows collected for the current run.
 Priority: `manual` > `developers.events` > `cfp.ninja` > `confs.tech` > `adato-tracker` >

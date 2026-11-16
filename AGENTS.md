@@ -13,7 +13,8 @@ first (`ln -s` commands in README › Quick start).
 This folder is a git repo with `origin` → `git@github.com:sujee/cfp-tracker.git`.
 
 Keeps a set of **one note per conference** under `data/`, refreshed from public CFP feeds
-(developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated files named in `MANUAL_INPUT_FILES`). The notes are the
+(developers.events, cfp.ninja, confs.tech, adato-tracker, Open Tech CFPs, and hand-curated
+files under `input/`, except `input/archived/`). The notes are the
 data source for the `cfps` base in the dashboard (`0-dashboard/bases/cfps.base`).
 
 ## Documentation style
@@ -118,7 +119,7 @@ Everything an agent needs is here, deliberately:
 - `src/process-adato-tracker.py` — adato-tracker fetcher (the `tablesorter` table on
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
-- `src/process-manual-input.py` — merges hand-curated `input/` files explicitly named in `MANUAL_INPUT_FILES` (`src/config_local.py`).
+- `src/process-manual-input.py` — merges every hand-curated file below `input/`, except `input/archived/`.
 - `src/watchlist.py` — resolves `- [Conference](url)` checklists to CFP pages and event metadata.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
@@ -355,10 +356,16 @@ External callers must pass both manifest types and protect other paused sources 
   vault-relative folder and does **not** suffix-match, so keep it in step with the vault's own
   copy. The `my_country` and `is_local_area` formulas centralize the personal location filters;
   Obsidian reads these base formulas, not the Python configuration.
-- **Manual input reads only explicitly listed files — no `input/*.md` sweep.**
-  `MANUAL_INPUT_FILES` in `src/config_local.py` lists relative file paths (usually basenames) inside `input/` and overrides the empty default; checklist and scratch files are ignored unless listed. Absolute paths, `..` traversal, and missing files fail the manual step so a typo cannot silently drop conferences. An empty list makes it a no-op. Only configured tables under those files provide rows.
-- **A manual file may instead be a website checklist.** In the same explicitly listed
-  `MANUAL_INPUT_FILES`, `- [Conference](https://event/)` bullets (also `*` / `+`) are
+- **Manual input processes every file except `input/archived/`.** The adapter scans `input/`
+  recursively in relative-path order. Directory symlinks are followed, with each directory read
+  once to avoid cycles. Filesystem scan errors abort collection. Filename extensions do not filter
+  the scan. Every file must contain UTF-8 text. An unreadable file aborts collection before note writes. Move inactive
+  files into `input/archived/`. Remove `manual` from `INPUT_SOURCES` to disable manual input.
+  `MANUAL_INPUT_FILES` no longer exists. Remove it from an old local configuration. An old
+  setting fails as unknown. Only recognized CFP tables and website checklists provide rows.
+  Other content is ignored.
+- **A manual file may instead be a website checklist.** Within these files,
+  `- [Conference](https://event/)` bullets (also `*` / `+`) are
   watched, not searched: `src/watchlist.py` fetches that page and ranks explicit
   speaker-submission links. It checks at most three candidates and skips closed or broken ones.
   Generic speaker rosters and empty links are not CFPs. JSON-LD `Event` metadata wins;
@@ -471,7 +478,7 @@ External callers must pass both manifest types and protect other paused sources 
   Google I/O, Cloud Next, Microsoft Build, WWDC, GitHub Universe, PyCon US, NeurIPS, ICML, ICLR,
   USENIX ATC, OSDI, GOTO, SIGMOD, VLDB, CVPR) sit in the same table on purpose: `--check` listing
   them as "matches nothing" *is* the coverage-gap report, and they start matching the day one
-  appears in a file listed in `MANUAL_INPUT_FILES`. Never "clean up" a zero-match row without checking whether it is a
+  appears under `input/`, excluding `input/archived/`. Never "clean up" a zero-match row without checking whether it is a
   gap row or a typo.
 - **A zero-match row is not a failure, but a malformed row is.** `int(ranking)` and an empty
   `keywords` cell raise `ValueError` with the line number, so a typo fails the run instead of
@@ -488,7 +495,7 @@ External callers must pass both manifest types and protect other paused sources 
   note also vetoes a URL/name-compatible active replacement. A successful higher-priority current
   replacement can supersede a lower-priority paused note after migrating its curated state.
   Unknown or empty values raise `ValueError` before any source runs.
-- **`prestige.md` stays at the repo root** (and `apply-prestige.py` finds it there). The manual source reads only `MANUAL_INPUT_FILES`, so do not add the prestige list there either — it is a ranking table, not a CFP row.
+- **`prestige.md` stays at the repo root** (and `apply-prestige.py` finds it there). The manual source reads only `input/`, so do not move the prestige list there either — it is a ranking table, not a CFP row.
 
 ## Verification
 

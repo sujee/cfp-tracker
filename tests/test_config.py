@@ -66,9 +66,8 @@ class TestLocalOverrides(unittest.TestCase):
             with self.assertRaises(ZeroDivisionError):
                 config.local_overrides(path)
 
-    def test_example_configuration_has_no_personal_inputs_or_filters(self) -> None:
+    def test_example_configuration_has_no_personal_filters(self) -> None:
         values = config.local_overrides(ROOT / "src" / "config_local.example.py")
-        self.assertEqual(values["MANUAL_INPUT_FILES"], [])
         self.assertEqual(values["IGNORE_NAMES"], [])
         self.assertEqual(values["IGNORE_TOPICS"], [])
 
@@ -100,7 +99,7 @@ class TestLocalOverrides(unittest.TestCase):
 class TestEffectiveConfiguration(unittest.TestCase):
     def test_settings_pass_writer_validation(self) -> None:
         self.assertTrue(config.INPUT_SOURCES)
-        self.assertIsInstance(config.MANUAL_INPUT_FILES, list)
+        self.assertFalse(hasattr(config, "MANUAL_INPUT_FILES"))
         self.assertTrue(config.EVENT_TYPES)
         for event_type in config.EVENT_TYPES:
             self.assertTrue(cfp_writer._event_type_included(event_type))

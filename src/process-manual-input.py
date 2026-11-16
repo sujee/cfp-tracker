@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """Merge manually curated conference tables into per-CFP notes.
 
-Only the files named in ``config.MANUAL_INPUT_FILES`` are read, resolved inside
-``--input``. Scraps, checklists, and newly dropped files under ``input/`` are not
-CFP sources until they are explicitly listed. To opt in to another file, add its
-basename there; to remove one, comment its entry out.
-
-Two opt-in file shapes coexist in that list: markdown CFP tables (no network),
-and checklists of ``- [Conference](https://event-url/)`` links (discovered only
-on the site itself, by ``src/watchlist.py``). Every other row is still ignored.
+Every file below ``--input`` is read recursively, except files below its
+``archived/`` subdirectory. Two file shapes are supported: Markdown CFP tables
+(no network), and checklists of ``- [Conference](https://event-url/)`` links
+(discovered only on the site itself, by ``src/watchlist.py``). Other rows and
+content are ignored.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
+import os
 import re
 import sys
 from pathlib import Path
@@ -193,43 +191,41 @@ def parse_rows(text: str) -> list[dict]:
 
 
 def manual_input_files(input_dir: Path) -> list[Path]:
-    """Resolve the explicit manual input file list inside *input_dir*.
+    """Return every file below *input_dir*, except the root ``archived/`` tree.
 
-    ``MANUAL_INPUT_FILES`` in config is a list of relative paths — typically one
-    basename, e.g. ``gmail1.md`` — never a directory sweep. An absent setting
-    falls back to legacy ``*.md`` globbing (callers outside this repo still work);
-    an empty list returns no files so manual input can be disabled while
-    remaining enabled in ``INPUT_SOURCES``. Each named path must be a relative
-    file inside the directory, and must exist: a typo would otherwise make its
-    conferences vanish silently from the next refresh.
+    Results use relative-path order so parsing stays deterministic. Filename
+    extensions do not filter the input. Directory symlinks are followed once,
+    and filesystem scan errors propagate instead of producing incomplete rows.
     """
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import config as _cfg
-
-    configured = getattr(_cfg, "MANUAL_INPUT_FILES", None)
-    if configured is None:
-        return sorted(input_dir.glob("*.md"))
-    if isinstance(configured, str) or not hasattr(configured, "__iter__"):
-        raise ValueError("config.MANUAL_INPUT_FILES must be a list of relative file paths")
-
     files: list[Path] = []
-    for item in configured:
-        if not isinstance(item, str) or not item.strip():
-            raise ValueError("config.MANUAL_INPUT_FILES must contain nonempty file paths")
-        name = item.strip()
-        relative = Path(name)
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError(
-                f"config.MANUAL_INPUT_FILES entry must stay inside {input_dir}: {name!r}"
-            )
-        path = input_dir / relative
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"configured manual input file not found: {path} "
-                "(fix MANUAL_INPUT_FILES in src/config_local.py or restore the file)"
-            )
-        files.append(path)
-    return files
+    root_stat = input_dir.stat()
+    seen_directories = {(root_stat.st_dev, root_stat.st_ino)}
+
+    def raise_scan_error(error: OSError) -> None:
+        raise error
+
+    for directory, dirnames, filenames in os.walk(
+        input_dir, topdown=True, onerror=raise_scan_error, followlinks=True
+    ):
+        parent = Path(directory)
+        retained = []
+        for name in sorted(dirnames):
+            path = parent / name
+            if path.relative_to(input_dir).parts[0] == "archived":
+                continue
+            stat = path.stat()
+            identity = (stat.st_dev, stat.st_ino)
+            if identity in seen_directories:
+                continue
+            seen_directories.add(identity)
+            retained.append(name)
+        dirnames[:] = retained
+        for name in filenames:
+            path = parent / name
+            if path.is_file():
+                files.append(path)
+
+    return sorted(files, key=lambda path: path.relative_to(input_dir).as_posix())
 
 
 def _normalize_event_date(raw: str) -> str:
@@ -293,11 +289,11 @@ def collect_rows(
 
     rows = []
     checked = []
-    for md in manual_input_files(input_dir):
+    for input_file in manual_input_files(input_dir):
         try:
-            text = md.read_text(encoding="utf-8")
+            text = input_file.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
-            raise RuntimeError(f"could not read manual input file {md}: {exc}") from exc
+            raise RuntimeError(f"could not read manual input file {input_file}: {exc}") from exc
         rows.extend(parse_rows(text))
         checked.extend(watchlist.parse_entries(text))
 

@@ -38,12 +38,8 @@ INPUT_SOURCES = [
     "manual",
 ]
 
-# Explicit manual input files, relative to input/. No other single markdown file
-# is read automatically — a checklist, scratch table, or new import file is not a
-# CFP source until it is listed here (and the manual source is enabled above).
-# The default is empty; name your personal files in config_local.py. A missing
-# or absolute path fails the manual step.
-MANUAL_INPUT_FILES = []
+# Manual input processes every file below input/ except input/archived/.
+# Remove "manual" from INPUT_SOURCES to disable manual input.
 
 # Allow-list of event_type values to keep in data/. Other types are skipped and
 # existing notes are archived. Valid values: conference, meetup, summit,
@@ -83,7 +79,6 @@ IGNORE_TOPICS = []
 KNOWN_SETTINGS = frozenset({
     "CONFS_TECH_TOPICS",
     "INPUT_SOURCES",
-    "MANUAL_INPUT_FILES",
     "EVENT_TYPES",
     "EVENT_TYPE_KEYWORDS",
     "IGNORE_NAMES",
