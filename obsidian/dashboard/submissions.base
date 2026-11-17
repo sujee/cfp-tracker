@@ -1,0 +1,76 @@
+filters:
+  and:
+    - type == "submission" || type == "talk-submission"
+    - '!file.folder.contains("template")'
+formulas:
+  submission_title: link(file.path, file.name)
+properties:
+  formula.submission_title:
+    displayName: Submission
+  talk:
+    displayName: Talk
+  cfp:
+    displayName: CFP
+  event_name:
+    displayName: Event
+  status:
+    displayName: Status
+  deadline:
+    displayName: Deadline
+  submitted_date:
+    displayName: Submitted
+  event_date:
+    displayName: Event date
+  url:
+    displayName: Event link
+  updated:
+    displayName: Updated
+views:
+  - type: table
+    name: All Submissions
+    order:
+      - formula.submission_title
+      - talk
+      - cfp
+      - status
+      - deadline
+      - submitted_date
+      - event_date
+      - url
+      - updated
+    sort:
+      - property: deadline
+        direction: ASC
+  - type: table
+    name: Pending Review
+    filters:
+      and:
+        - status == "submitted"
+    order:
+      - formula.submission_title
+      - talk
+      - cfp
+      - deadline
+      - submitted_date
+      - event_date
+      - url
+      - updated
+    sort:
+      - property: deadline
+        direction: ASC
+  - type: table
+    name: Accepted
+    filters:
+      and:
+        - status == "accepted"
+    order:
+      - formula.submission_title
+      - talk
+      - cfp
+      - submitted_date
+      - event_date
+      - url
+      - updated
+    sort:
+      - property: event_date
+        direction: ASC

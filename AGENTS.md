@@ -139,7 +139,11 @@ Everything an agent needs is here, deliberately:
 - `docs/cfp-sources.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
-- `cfps.base` — Obsidian views; personal country and local-area predicates live in `formulas`.
+- `obsidian/dashboard/` — CFP, talk, and submission bases plus the CFP Dataview dashboard.
+  Personal CFP country and local-area predicates live in the base's `formulas`.
+- `obsidian/templates/` — CFP, talk, and submission templates.
+- `obsidian/talks/`, `obsidian/submissions/` — example talk and submission notes.
+- `obsidian/cfps/data/` — example CFP notes linked from the submissions.
 - `README.md` — overview and the source list.
 - `tests/` — stdlib `unittest` suite for the writer, the run summary, and all source parsers
   (`python3 -m unittest discover -s tests -v`); fixtures under `tests/fixtures/` are real

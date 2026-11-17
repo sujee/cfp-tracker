@@ -1,48 +1,19 @@
 filters:
   and:
     - type == "cfp"
+    - '!file.folder.contains("template")'
 formulas:
   cfp_title: link(file.path, if(event_name, event_name, file.name))
-  submission_count: 'list(submissions).length'
-  # Folder constants — the match is a suffix, so these work whether your vault
-  # stores the notes at `cfps/data` or at `30-speaking-talks/cfps/data`.
-  # Change them only if the folders themselves are named differently.
+  submission_count: list(submissions).length
   data_dir: '"cfps/data/"'
   archived_dir: '"cfps/archived/"'
-  # Personal location settings for the My Country and My Local Area views.
-  # Use the canonical country value from your notes, such as "USA" or "UK".
   my_country: '"USA"'
-  # Add or remove location.contains(...) clauses to define your local area.
-  is_local_area: >-
-    location.contains("San Francisco") ||
-    location.contains("San Jose") ||
-    location.contains("Oakland") ||
-    location.contains("Berkeley") ||
-    location.contains("Santa Clara") ||
-    location.contains("Sunnyvale") ||
-    location.contains("Palo Alto") ||
-    location.contains("Mountain View") ||
-    location.contains("Cupertino") ||
-    location.contains("Redwood") ||
-    location.contains("Menlo Park") ||
-    location.contains("San Mateo") ||
-    location.contains("Milpitas") ||
-    location.contains("Fremont") ||
-    location.contains("Hayward") ||
-    location.contains("Emeryville") ||
-    location.contains("Los Altos") ||
-    location.contains("Los Gatos") ||
-    location.contains("Pleasanton") ||
-    location.contains("Livermore") ||
-    location.contains("Bay Area")
-  # The predicates every view below filters on, so no view repeats a path.
-  is_in_data: '("/" + file.path).contains("/" + formula.data_dir)'
-  is_archived: '("/" + file.path).contains("/" + formula.archived_dir)'
-  is_dismissed: 'dismissed == true || dismissed == "true"'
-  is_live: 'formula.is_in_data && !formula.is_dismissed'
-  # Curated ranking stamped by src/apply-prestige.py from prestige.md
-  # (1 = flagship, 2 = major, 3 = notable). Absent -> not ranked.
-  is_prestigious: 'tier == 1 || tier == 2'
+  is_local_area: location.contains("San Francisco") || location.contains("San Jose") || location.contains("Oakland") || location.contains("Berkeley") || location.contains("Santa Clara") || location.contains("Sunnyvale") || location.contains("Palo Alto") || location.contains("Mountain View") || location.contains("Cupertino") || location.contains("Redwood") || location.contains("Menlo Park") || location.contains("San Mateo") || location.contains("Milpitas") || location.contains("Fremont") || location.contains("Hayward") || location.contains("Emeryville") || location.contains("Los Altos") || location.contains("Los Gatos") || location.contains("Pleasanton") || location.contains("Livermore") || location.contains("Bay Area")
+  is_in_data: ("/" + file.path).contains("/" + formula.data_dir)
+  is_archived: ("/" + file.path).contains("/" + formula.archived_dir)
+  is_dismissed: dismissed == true || dismissed == "true"
+  is_live: formula.is_in_data && !formula.is_dismissed
+  is_prestigious: tier == 1 || tier == 2
 properties:
   formula.cfp_title:
     displayName: Event
@@ -77,7 +48,7 @@ views:
     name: Search
     filters:
       and:
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -87,6 +58,7 @@ views:
       - event_date
       - location
       - topics
+      - submissions
     sort:
       - property: cfp_close
         direction: ASC
@@ -99,8 +71,8 @@ views:
     name: Conflicts
     filters:
       and:
-        - 'formula.is_in_data'
-        - 'conflict == true'
+        - formula.is_in_data
+        - conflict == true
     order:
       - cfp_close
       - formula.cfp_title
@@ -120,7 +92,7 @@ views:
     name: All (+dismissed)
     filters:
       and:
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -147,7 +119,7 @@ views:
     name: All (-dismissed)
     filters:
       and:
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -174,8 +146,8 @@ views:
     name: Prestigious (+dismissed)
     filters:
       and:
-        - 'formula.is_in_data'
-        - 'formula.is_prestigious'
+        - formula.is_in_data
+        - formula.is_prestigious
     order:
       - cfp_close
       - tier
@@ -202,8 +174,8 @@ views:
     name: Prestigious (-dismissed)
     filters:
       and:
-        - 'formula.is_live'
-        - 'formula.is_prestigious'
+        - formula.is_live
+        - formula.is_prestigious
     order:
       - cfp_close
       - tier
@@ -230,7 +202,7 @@ views:
     name: Recently Updated (+dismissed)
     filters:
       and:
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -262,7 +234,7 @@ views:
     name: Recently Updated (-dismissed)
     filters:
       and:
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -284,7 +256,7 @@ views:
     filters:
       and:
         - shortlist == true
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -304,7 +276,7 @@ views:
     filters:
       and:
         - list(submissions).length > 0
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -332,7 +304,7 @@ views:
     filters:
       and:
         - cfp_close >= today() - "30d"
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -353,7 +325,7 @@ views:
     filters:
       and:
         - cfp_close >= today() - "30d"
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -374,7 +346,7 @@ views:
     filters:
       and:
         - cfp_close >= today()
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -404,7 +376,7 @@ views:
     filters:
       and:
         - cfp_close >= today()
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -435,7 +407,7 @@ views:
       and:
         - cfp_close < today() - "30d"
         - cfp_close >= today() - "90d"
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -457,7 +429,7 @@ views:
       and:
         - cfp_close < today() - "30d"
         - cfp_close >= today() - "90d"
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -478,7 +450,7 @@ views:
     filters:
       and:
         - country == formula.my_country
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -499,7 +471,7 @@ views:
     filters:
       and:
         - country == formula.my_country
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -520,7 +492,7 @@ views:
     filters:
       and:
         - country != formula.my_country
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -541,7 +513,7 @@ views:
     filters:
       and:
         - country != formula.my_country
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -562,7 +534,7 @@ views:
     filters:
       and:
         - country == "Online"
-        - 'formula.is_in_data'
+        - formula.is_in_data
     order:
       - cfp_close
       - tier
@@ -586,7 +558,7 @@ views:
     filters:
       and:
         - country == "Online"
-        - 'formula.is_live'
+        - formula.is_live
     order:
       - cfp_close
       - tier
@@ -609,8 +581,8 @@ views:
     name: Location - My Local Area (+dismissed)
     filters:
       and:
-        - 'formula.is_in_data'
-        - 'formula.is_local_area'
+        - formula.is_in_data
+        - formula.is_local_area
     order:
       - cfp_close
       - tier
@@ -636,8 +608,8 @@ views:
     name: Location - My Local Area (-dismissed)
     filters:
       and:
-        - 'formula.is_live'
-        - 'formula.is_local_area'
+        - formula.is_live
+        - formula.is_local_area
     order:
       - cfp_close
       - tier
@@ -663,8 +635,8 @@ views:
     name: Dismissed
     filters:
       and:
-        - 'formula.is_in_data'
-        - 'formula.is_dismissed'
+        - formula.is_in_data
+        - formula.is_dismissed
     order:
       - cfp_close
       - tier

@@ -177,13 +177,18 @@ rules that decide which values survive a refresh.
 
 ## Browse in Obsidian
 
-Copy [`cfps.base`](cfps.base) into your vault. Copy
-[`cfps-dashboard.md`](cfps-dashboard.md) too if you want summary tables.
+The [`obsidian/dashboard/`](obsidian/dashboard/) folder contains these assets:
 
-The base requires Obsidian Bases (included with Obsidian core). The dashboard requires the Dataview plugin.
+- [`cfps.base`](obsidian/dashboard/cfps.base): CFP discovery and tracking.
+- [`talks.base`](obsidian/dashboard/talks.base): Talk catalog and status views.
+- [`submissions.base`](obsidian/dashboard/submissions.base): Submission deadlines and status views.
+- [`cfps-dashboard.md`](obsidian/dashboard/cfps-dashboard.md): CFP summary tables.
 
-The base reads notes from `data/`. The archive views read notes from `archived/`. If your notes use
-different folders, update the paths in both files.
+Copy the assets you use into your vault.
+
+The bases require Obsidian Bases (included with Obsidian core). The dashboard requires the Dataview plugin.
+
+The CFP base reads notes from `data/`. Its archive views read notes from `archived/`. If your notes use different folders, update the paths in `cfps.base` and `cfps-dashboard.md`.
 
 Personalize the location views in the `formulas` section of `cfps.base`:
 

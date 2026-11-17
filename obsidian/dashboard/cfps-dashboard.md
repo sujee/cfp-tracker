@@ -16,6 +16,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !contains(file.folder, "template")
   AND !dismissed
   AND country
 GROUP BY country
@@ -35,6 +36,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !contains(file.folder, "template")
   AND !dismissed
   AND topics
 FLATTEN topics AS topic
@@ -52,6 +54,7 @@ TABLE WITHOUT ID
   length(rows) AS "Events"
 FROM "cfps/data"
 WHERE type = "cfp"
+  AND !contains(file.folder, "template")
   AND !dismissed
   AND event_date
 GROUP BY dateformat(event_date, "yyyy-MM") AS month

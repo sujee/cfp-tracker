@@ -7,9 +7,12 @@ venv/
 __pycache__/
 *.py[cod]
 
-# Symlinks to the Obsidian vault — notes live there, not in this repo
-data
-archived
+# Root symlinks to the Obsidian vault. Example notes under obsidian/ remain trackable.
+/data
+/archived
+
+# Obsidian application state
+/obsidian/.obsidian/
 
 # Personal configuration (copy src/config_local.example.py to create it)
 src/config_local.py

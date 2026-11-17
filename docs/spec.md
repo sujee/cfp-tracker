@@ -5,7 +5,7 @@
 - **Current procedures:** [`INSTRUCTIONS.md`](../INSTRUCTIONS.md)
 - **Current data contracts:** [`AGENTS.md`](../AGENTS.md)
 **Primary implementation:** `src/`  
-**Primary outputs:** `data/**/*.md`, `archived/**/*.md`, and the Obsidian views in `cfps.base` / `cfps-dashboard.md`
+**Primary outputs:** `data/**/*.md`, `archived/**/*.md`, and the Obsidian views in `obsidian/dashboard/cfps.base` / `obsidian/dashboard/cfps-dashboard.md`
 
 This document specifies the code at the snapshot above. It does not describe later reconciliation,
 cache, watchlist, or archive changes. Use the current procedures and data contracts for new work.
@@ -81,7 +81,7 @@ The system shall:
 | Compatibility shim | `src/build-open-cfps.py` | Delegate to `process-developer-events.py`. |
 | Configuration | `src/config.py` + gitignored `src/config_local.py` | Tracked defaults plus validated personal overrides; `config_local.example.py` is the template. |
 | Discovered topics | `src/discovered-topics.txt` | Generated reference list of confs.tech topic files; not used for extraction. |
-| Obsidian artifacts | `cfps.base`, `cfps-dashboard.md` | Browse and aggregate notes. |
+| Obsidian artifacts | `obsidian/dashboard/cfps.base`, `obsidian/dashboard/cfps-dashboard.md` | Browse and aggregate notes. |
 
 ### 3.2 Repository and vault boundary
 
@@ -1128,7 +1128,7 @@ Other 2xx statuses count as not-200. A 403 or 429 response means blocked/rate-li
 
 ### 15.1 Base artifact
 
-`cfps.base` can be copied into the vault. Its global filter is:
+`obsidian/dashboard/cfps.base` can be copied into the vault. Its global filter is:
 
 ```text
 type == "cfp"
@@ -1169,7 +1169,7 @@ Most views display a common set of CFP properties. Short listed and Submitted om
 
 ### 15.3 Dataview dashboard
 
-`cfps-dashboard.md` uses three Dataview tables. All read positively from `cfps/data` and require `type = "cfp"`, thereby excluding archived notes by path.
+`obsidian/dashboard/cfps-dashboard.md` uses three Dataview tables. All read positively from `cfps/data` and require `type = "cfp"`, thereby excluding archived notes by path.
 
 | Table | Query semantics |
 |---|---|

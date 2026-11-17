@@ -1,0 +1,58 @@
+filters:
+  and:
+    - type == "talk"
+    - '!file.folder.contains("template")'
+formulas:
+  talk_title: link(file.path, if(title, title, file.name))
+properties:
+  formula.talk_title:
+    displayName: Talk
+  status:
+    displayName: Status
+  talk-type:
+    displayName: Session type
+  audience_level:
+    displayName: Audience level
+  duration:
+    displayName: Duration
+  demo_required:
+    displayName: Demo required
+  updated:
+    displayName: Updated
+  talk_url:
+    displayName: Talk link
+  sessionize_url:
+    displayName: Sessionize link
+views:
+  - type: table
+    name: All Talks
+    order:
+      - formula.talk_title
+      - status
+      - talk-type
+      - audience_level
+      - duration
+      - demo_required
+      - updated
+      - talk_url
+      - sessionize_url
+    sort:
+      - property: updated
+        direction: DESC
+  - type: table
+    name: Ready
+    filters:
+      and:
+        - status == "ready"
+    order:
+      - formula.talk_title
+      - talk-type
+      - audience_level
+      - duration
+      - demo_required
+      - updated
+      - talk_url
+      - sessionize_url
+    sort:
+      - property: title
+        direction: ASC

@@ -224,8 +224,20 @@ treats every other source as paused.
 
 ## Obsidian views
 
-Copy [`cfps.base`](../cfps.base) into the vault. The base needs the Obsidian Bases core
-plugin. Copy [`cfps-dashboard.md`](../cfps-dashboard.md) for the Dataview summary tables.
+The [`obsidian/dashboard/`](../obsidian/dashboard/) folder contains these assets:
+
+| Asset | Contents |
+|---|---|
+| [`cfps.base`](../obsidian/dashboard/cfps.base) | CFP discovery and tracking views. |
+| [`talks.base`](../obsidian/dashboard/talks.base) | All talks and ready talks. |
+| [`submissions.base`](../obsidian/dashboard/submissions.base) | All submissions, pending reviews, and accepted submissions. |
+| [`cfps-dashboard.md`](../obsidian/dashboard/cfps-dashboard.md) | Dataview CFP summary tables. |
+
+Copy the assets you use into the vault. The bases need the Obsidian Bases core plugin. The dashboard needs the Dataview plugin.
+
+`talks.base` filters notes with `type: talk`. `submissions.base` supports `type: submission` and `type: talk-submission`.
+
+### CFP views
 
 | Group | Views |
 |---|---|
@@ -237,7 +249,7 @@ plugin. Copy [`cfps-dashboard.md`](../cfps-dashboard.md) for the Dataview summar
 Most groups have a `(+dismissed)` and a `(-dismissed)` variant. Short listed and
 Submitted show both kinds of note.
 
-### Formulas
+### CFP formulas
 
 `cfps.base` keeps the personal values in one place.
 
@@ -341,6 +353,10 @@ of the downloaded data. Any change under `src/` must keep the suite passing.
 | `src/check-links.py` | URL checker for note directories. |
 | `src/prestige.py`, `src/apply-prestige.py` | Ranking table parser and stamper. |
 | `data/`, `archived/` | Symlinks into the Obsidian vault. |
+| `obsidian/dashboard/` | CFP, talk, and submission bases plus the CFP dashboard. |
+| `obsidian/templates/` | CFP, talk, and submission templates. |
+| `obsidian/talks/`, `obsidian/submissions/` | Example talk and submission notes. |
+| `obsidian/cfps/data/` | Example CFP notes linked from the submissions. |
 | `tests/` | Unit tests and fixtures. |
 
 ### Add a source
