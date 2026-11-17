@@ -155,9 +155,11 @@ then write outside the vault. The Python sources and docs are real files in this
 
 ## Git
 
-- **Never commit to git automatically.** Never push automatically. **Always ask
-  permission before `git commit` or `git push`** — a recent commit in this session does not
-  imply consent for the next one; ask each time.
+- Ask for explicit permission before each `git commit` or `git push`. Approval for one action does not approve a later action.
+- Push to `origin` only from the `main` worktree.
+- Before starting a feature, offer to commit existing changes.
+- Before starting a feature, offer to create another worktree.
+- Create each worktree beside the existing worktrees. Do not place it inside another worktree or OpenCode's internal worktree directory.
 - `data/` and `archived/` are gitignored symlinks into the vault (`README.md` › Quick start
   creates them). Never force-add their contents, and never replace them with real
   directories.
