@@ -356,7 +356,9 @@ External callers must pass both manifest types and protect other paused sources 
   identity match prevents retention for an uncurated note. A free-text close receives no window
   protection. A merged duplicate moves only after the reconciler migrates its curated state to the
   surviving note. Every archive move preserves the file byte-for-byte.
-  The archiver checks all destinations before the first move and never overwrites an existing file.
+  The archiver never overwrites an existing file. An identical live-and-archived duplicate
+  collapses by deleting only the live duplicate. Conflicting copies receive a numbered
+  `-collision-N.md` filename, so different versions remain available without aborting the run.
   Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
   notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Short listed** and
   **Submitted** are single views without dismissal filtering or a Dismissed column; Submitted also

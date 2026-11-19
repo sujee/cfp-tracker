@@ -40,7 +40,8 @@ file under `input/`, except `input/archived/`. Three academic listings are avail
 - The pipeline collects every enabled source before it writes notes. A collection error stops the run.
   The reconciler then selects current rows. It renames revised notes and migrates state from duplicates.
 - The archiver moves eligible archive candidates through the `archived/` symlink.
-  It aborts all moves if a destination already exists. `--no-archive` disables archiving.
+  It removes only identical live-and-archived duplicates. Conflicting copies receive numbered
+`-collision-N.md` filenames instead of causing a refresh failure. `--no-archive` disables archiving.
   Canonical revision renames still occur.
   Use `--archive DIR` to change the destination.
 - Last, `src/apply-prestige.py` stamps the curated `tier` (1/2/3) from `prestige.md` onto the

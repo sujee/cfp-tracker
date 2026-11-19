@@ -314,8 +314,8 @@ Rolling-window retention also keeps an eligible source-missing note in `data/`. 
 topic filters. A current note with the same CFP identity prevents retention. Merged duplicates
 still archive. A free-text close receives no rolling-window protection.
 
-A `tier` alone does not keep a note in `data/`. A moved file keeps its bytes. A move never
-overwrites an existing file, and `--no-archive` disables the stage.
+A `tier` alone does not keep a note in `data/`. A moved file keeps its bytes. Identical live-and-archived
+duplicates collapse by deleting only the live duplicate. Conflicting copies receive numbered `-collision-N.md` filenames. `--no-archive` disables the stage. Dry runs never delete duplicates.
 
 ## Troubleshooting
 
