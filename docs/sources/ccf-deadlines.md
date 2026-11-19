@@ -1,22 +1,29 @@
 # CCF Deadlines
 
-- **Status:** Academic paper deadlines / separate product only.
-- **Official/source URL(s):** [ccfddl/ccf-deadlines](https://github.com/ccfddl/ccf-deadlines).
-- **Interface:** Maintained, MIT-licensed YAML dataset with typed deadline rounds.
-- **Verification:** Compact repository-and-schema assessment dated 2026-11-11.
+- **Status:** Implemented as an independent academic listing source. Disabled by default for academic use.
+- **Official/source URL(s):** [ccfddl/ccf-deadlines](https://github.com/ccfddl/ccf-deadlines), [CCFDDL AI venues](https://ccfddl.com/venues/ai/)
+- **Adapter:** [`src/process-ccf-deadlines.py`](../../src/process-ccf-deadlines.py)
+- **Interface:** [Structured `allconf.json` catalogue](https://ccfddl.com/conference/allconf.json), plus the maintained MIT YAML repository.
+- **Verification:** Repository review dated 2026-11-11. Listing adapter verified 2026-11-18.
 
 ## Data and access
 
-The repository publishes structured academic conference deadlines in YAML, including venue links and typed rounds. Its [conference-entry schema](https://github.com/ccfddl/ccf-deadlines#conference-entry-file) documents repository conventions. By convention, date-only values are treated as `23:59:59`, and an unknown timezone is treated as `AoE` (Anywhere on Earth).
+The catalogue publishes one conference-series object per venue. Editions include links, event dates, locations, timezone labels, and typed deadline rounds. The adapter selects named robotics series and robotics-described AI venues.
+
+The adapter emits separate rows for `abstract_deadline`, `deadline`, `rebuttal_deadline`, and `decision_deadline`. Each row name includes the stage and source comment. Deadline text retains its timezone instead of forcing all rounds into one submission date. Every row carries normalized `robotics` and `physical.ai` topics.
 
 ## Caveats
 
-Those time and timezone defaults are dataset conventions, not organizer-stated precision; preserve that distinction when displaying or comparing deadlines. Records concern paper submissions and typed academic rounds, not talk CFPs, and do not guarantee a distinct speaking-application URL.
+These are academic deadlines, not talk CFPs. Repository conventions treat date-only values as `23:59:59` and unknown zones as `AoE`. These conventions do not prove organizer-stated clock time or timezone precision.
+
+The adapter ignores derived `opening` timestamps. Rebuttal and decision rounds remain distinct from the initial call. Event dates retain only the start date, and unknown countries remain empty. Links can lead to the conference homepage instead of a dedicated CFP page.
 
 ## Integration guidance
 
-Keep this dataset outside the developer-speaking tracker unless a separate academic paper-deadline product is approved. Then model rounds explicitly rather than collapsing them into one speaker deadline, and retain convention metadata. [AgentConfs already consumes ccf-deadlines](https://agentconfs.com/llms.txt), so assess overlap before adding duplicate academic ingestion; finer rounds would need to justify that addition.
+Enable `ccf-deadlines` in `INPUT_SOURCES` only when academic rounds belong in the product. Keep the source outside speaking-only refreshes. AgentConfs already consumes this dataset, so deduplicate shared venues instead of importing them twice as new speaker opportunities.
 
 ## Evidence
 
-The compact review identified a maintained MIT YAML dataset, typed rounds, the `23:59:59` and `AoE` conventions, and AgentConfs overlap. It explicitly classified the source as suitable only for a separate academic product.
+- [Repository and schema](https://github.com/ccfddl/ccf-deadlines#conference-entry-file) — conference-entry fields and conventions.
+- [AgentConfs methodology](https://agentconfs.com/llms.txt) — shared upstream coverage.
+- [Fixture-based tests](../../tests/test_listing_sources.py) — independent stages, timezone preservation, and cross-month event dates.

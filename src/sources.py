@@ -18,15 +18,26 @@ class SourceSpec:
     priority: int
 
 
+LISTING_SOURCES = (
+    "agentconfs",
+    "realtime-embedded-conferences",
+    "ieee-ras",
+    "ccf-deadlines",
+)
+
 # The priority belongs here, not in the writer and wrapper independently. Lower
 # numbers describe richer sources and win when current rows identify one CFP.
 SOURCE_SPECS = (
     SourceSpec("developers.events", "process-developer-events.py", 1),
     SourceSpec("cfp.ninja", "process-cfp-ninja.py", 2),
     SourceSpec("python-deadlines", "process-python-deadlines.py", 3),
-    SourceSpec("confs.tech", "process-confs-tech.py", 4),
-    SourceSpec("adato-tracker", "process-adato-tracker.py", 5),
-    SourceSpec("open-tech-cfps", "process-open-tech-cfps.py", 6),
+    SourceSpec("agentconfs", "process-agentconfs.py", 4),
+    SourceSpec("confs.tech", "process-confs-tech.py", 5),
+    SourceSpec("adato-tracker", "process-adato-tracker.py", 6),
+    SourceSpec("open-tech-cfps", "process-open-tech-cfps.py", 7),
+    SourceSpec("realtime-embedded-conferences", "process-realtime-embedded-conferences.py", 8),
+    SourceSpec("ieee-ras", "process-ieee-ras.py", 9),
+    SourceSpec("ccf-deadlines", "process-ccf-deadlines.py", 10),
     SourceSpec("manual", "process-manual-input.py", 0),
 )
 SOURCE_NAMES = tuple(spec.name for spec in SOURCE_SPECS)
@@ -87,6 +98,10 @@ def collect_source(name: str, context: RunContext) -> list[dict]:
         )
     elif name == "open-tech-cfps":
         rows = module.collect_rows(context.cutoff, context.cache, offline=context.offline)
+    elif name in LISTING_SOURCES:
+        rows = module.collect_rows(
+            context.cutoff, context.today, context.cache, offline=context.offline
+        )
     elif name == "manual":
         return module.collect_rows(
             context.input_dir,

@@ -23,8 +23,8 @@ which overrides the defaults in `src/config.py`; copy `src/config_local.example.
 Remove a source from the local list to skip it. Unmodified notes from that source stay in `data/`.
 A successful current row can take ownership from a lower-priority paused note after curation migration.
 Unknown or empty source lists fail the run. Sources: developers.events, cfp.ninja,
-PythonDeadlin.es, confs.tech, adato-tracker, Open Tech CFPs, and every hand-curated file under
-`input/`, except `input/archived/`.
+PythonDeadlin.es, AgentConfs, confs.tech, adato-tracker, Open Tech CFPs, and every hand-curated
+file under `input/`, except `input/archived/`. Three academic listings are available separately.
 
 - `src/process-developer-events.py` and the other Python sources are real files under `src/`
   in this code folder. Edit them here.
@@ -195,6 +195,7 @@ operation without overwriting the archived note.
   Every file must contain UTF-8 text. Unreadable files or directories abort collection before note writes.
   The adapter follows directory symlinks and reads each directory once to avoid cycles.
   Only recognized tables and website checklists produce rows. Other content is ignored.
+
   Remove the obsolete `MANUAL_INPUT_FILES` setting from `src/config_local.py`.
 - Do not commit or push anything to git unless asked. Always ask permission first — never
   commit or push automatically.
@@ -209,6 +210,9 @@ Merged into `data/`:
   submission page is `cfp.ninja/e/<slug>`; filter on `cfp_close_at`, never `cfp_status`.
 - **PythonDeadlin.es** — public `conferences.yml` with event links and actionable CFP links.
   Filter on the CFP deadline. Rank below cfp.ninja and above confs.tech.
+- **AgentConfs** — keyless structured event JSON (`data/events.json`), filtered to current robotics
+  speaking calls. Exclude academic types, academic provenance, Robot Framework, and RoboCon.
+  Rank below PythonDeadlin.es and above confs.tech.
 - **confs.tech** — `github.com/tech-conferences/conference-data` JSON (`cfpUrl` + `cfpEndDate`).
 - **adato-tracker** — the `tablesorter` table on `adatosystems.com/cfp-tracker/` (Leon Adato).
   Clean ISO dates, event + CFP URLs, city/state; no topics or benefits. It aggregates the same
@@ -220,16 +224,24 @@ Merged into `data/`:
   `- [Conference](url)` checklist bullets resolve CFP pages via `src/watchlist.py`.
   Explicitly closed submission pages and closes before `--today` are skipped.
 
+Three academic listing adapters are registered but disabled by default:
+`realtime-embedded-conferences`, `ieee-ras`, and `ccf-deadlines`. Enable them explicitly
+in `INPUT_SOURCES` when academic rounds belong in the product. automaticDai drops predicted dates.
+IEEE RAS preserves deadline URLs. CCFDDL keeps abstract, submission, rebuttal, and decision
+rounds separate instead of merging them into one speaker deadline. Every listing adapter adds
+`robotics` and `physical.ai` topics and normalizes equivalent spellings without duplicate variants.
+
 The reconciler compares source priority only among rows collected for the current run.
-Priority: `manual` > `developers.events` > `cfp.ninja` > `python-deadlines` > `confs.tech` >
-`adato-tracker` > `open-tech-cfps`. A stale higher-priority note does not block an active source.
+Priority: `manual` > `developers.events` > `cfp.ninja` > `python-deadlines` > `agentconfs` >
+`confs.tech` > `adato-tracker` > `open-tech-cfps` > `realtime-embedded-conferences` >
+`ieee-ras` > `ccf-deadlines`. A stale higher-priority note does not block an active source.
 A deliberately skipped richer source protects its existing notes.
 Normalized submission URLs combine with compatible event names to match different paths.
 Compatible current rows with later deadlines win a same-source revision tie.
 A revision updates and renames its existing note without an archived predecessor.
 The writer migrates curated fields from duplicate notes before the archiver moves those duplicates.
 
-More may be added — see `docs/cfp-sources.md` for scriptable/browsable-only status and
+More may be added — see `docs/sources/README.md` for scriptable/browsable-only status and
 `docs/sources/` for detailed notes. When you add one: a fetcher under `src/` that normalises to the same row
 shape, letting `src/cfp_writer.py` write the note, so the note shape stays stable. Update this
 file and the README in the same change.
@@ -247,7 +259,9 @@ file and the README in the same change.
 - `src/sources.py` — canonical source registry and shared collection context.
 - `src/reconcile.py` — selects current rows, renames revised notes, and merges duplicate state.
 - `src/http_cache.py` — shared online-first HTTP cache with an offline mode.
-- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-python-deadlines.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — per-source fetchers.
+- `src/process-developer-events.py`, `src/process-cfp-ninja.py`, `src/process-python-deadlines.py`, `src/process-confs-tech.py`, `src/process-adato-tracker.py`, `src/process-open-tech-cfps.py`, `src/process-manual-input.py` — existing per-source fetchers.
+- `src/process-agentconfs.py`, `src/process-realtime-embedded-conferences.py`, `src/process-ieee-ras.py`, `src/process-ccf-deadlines.py` — independent event-listing adapters.
+- `src/listing_source.py` — shared standalone invocation and date parsing for listing adapters.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonical country labels (`United Kingdom` → `UK`), used by the writer.
 - `src/archive-orphans.py` — archives orphans while retaining eligible notes inside the rolling window.
@@ -258,7 +272,7 @@ file and the README in the same change.
   Dead links return 1. Unreadable notes return 2 because verification is incomplete.
 - `prestige.md` — the curated conference ranking (tier 1/2/3), edited by hand.
 - `src/prestige.py` — loads and matches `prestige.md`; `src/apply-prestige.py` stamps `tier`.
-- `docs/cfp-sources.md` — source index; `docs/sources/` holds one detail page per source.
+- `docs/sources/README.md` — source index; `docs/sources/` holds one detail page per source.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync`, then
   `uv run python src/…`.
 - `tests/` — stdlib `unittest` suite (`python3 -m unittest discover -s tests -v`).

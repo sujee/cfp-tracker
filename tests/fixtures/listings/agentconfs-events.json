@@ -1,0 +1,59 @@
+{
+  "license": "CC BY 4.0",
+  "events": [
+    {
+      "id": "embedded-vision",
+      "name": "Embedded Vision Summit 2027",
+      "type": "summit",
+      "official_url": "https://embeddedvisionsummit.com/",
+      "start_date": "2027-02-02",
+      "end_date": "2027-02-04",
+      "format": "in-person",
+      "topic_tags": ["computer-vision", "robotics", "ai-engineering"],
+      "cfp_close": "2026-11-21",
+      "cfp_url": "https://sessionize.com/2027-embedded-vision-summit-proposals",
+      "city": "San Francisco",
+      "country": "United States",
+      "sources": {"cfp": "https://sessionize.com/2027-embedded-vision-summit-proposals"}
+    },
+    {
+      "id": "rss-paper",
+      "name": "RSS 2027",
+      "type": "academic conference",
+      "official_url": "https://roboticsconference.org/",
+      "start_date": "2027-07-06",
+      "topic_tags": ["robotics"],
+      "cfp_close": "2026-12-04",
+      "cfp_url": "https://roboticsconference.org/",
+      "city": "Athens",
+      "country": "Greece",
+      "sources": {"cfp": "https://github.com/ccfddl/ccf-deadlines"}
+    },
+    {
+      "id": "robocon",
+      "name": "RoboCon 2027",
+      "type": "conference",
+      "official_url": "https://www.robocon.io/",
+      "start_date": "2027-03-08",
+      "topic_tags": ["robotics"],
+      "cfp_close": "2026-12-01",
+      "cfp_url": "https://pretalx.com/robocon-2027/cfp",
+      "city": "Helsinki",
+      "country": "Finland",
+      "sources": {"cfp": "https://developers.events/all-events.json"}
+    },
+    {
+      "id": "general-ai",
+      "name": "General AI Summit 2027",
+      "type": "summit",
+      "official_url": "https://example.org/ai",
+      "start_date": "2027-05-01",
+      "topic_tags": ["ai-general"],
+      "cfp_close": "2026-12-31",
+      "cfp_url": "https://example.org/ai/cfp",
+      "city": "London",
+      "country": "United Kingdom",
+      "sources": {"cfp": "https://example.org/ai/cfp"}
+    }
+  ]
+}

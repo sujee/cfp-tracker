@@ -1,0 +1,65 @@
+[
+  {
+    "title": "IROS",
+    "description": "IEEE/RSJ International Conference on Intelligent Robots and Systems",
+    "sub": "AI",
+    "dblp": "iros",
+    "confs": [
+      {
+        "year": 2027,
+        "id": "iros27",
+        "link": "https://2027.ieee-iros.org/",
+        "timeline": [
+          {
+            "deadline": "2027-03-01 23:59:59",
+            "comment": "Paper submission deadline: March 1, 2027"
+          }
+        ],
+        "timezone": "AoE",
+        "date": "September 27 - October 1, 2027",
+        "place": "Florence, Italy"
+      }
+    ]
+  },
+  {
+    "title": "RSS",
+    "description": "Robotics Science and Systems",
+    "sub": "AI",
+    "dblp": "rss",
+    "confs": [
+      {
+        "year": 2027,
+        "id": "rss27",
+        "link": "https://roboticsconference.org/",
+        "timeline": [
+          {
+            "deadline": "2026-12-04 23:59:59",
+            "rebuttal_deadline": "2027-02-12 23:59:59",
+            "decision_deadline": "2027-04-30 23:59:59",
+            "comment": "Stage 1: initial 6-page extended abstract submission"
+          }
+        ],
+        "timezone": "AoE",
+        "date": "July 6-11, 2027",
+        "place": "Athens, Greece"
+      }
+    ]
+  },
+  {
+    "title": "AAAI",
+    "description": "AAAI Conference on Artificial Intelligence",
+    "sub": "AI",
+    "dblp": "aaai",
+    "confs": [
+      {
+        "year": 2027,
+        "id": "aaai27",
+        "link": "https://aaai.org/conference/aaai/aaai-27/",
+        "timeline": [{"deadline": "2026-07-28 23:59:59"}],
+        "timezone": "UTC-12",
+        "date": "February 16-23, 2027",
+        "place": "Montréal, Canada"
+      }
+    ]
+  }
+]

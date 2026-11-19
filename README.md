@@ -232,7 +232,11 @@ uv run python src/apply-prestige.py --check
 
 The pipeline reads from various sources.
 
-See [`docs/cfp-sources.md`](docs/cfp-sources.md) for source details and attribution.
+- AgentConfs supplies robotics speaking calls by default. Its adapter rejects academic paper calls.
+- automaticDai, IEEE RAS, and CCFDDL provide independent academic deadline listings. Enable them explicitly when needed.
+- Listing adapters add both `robotics` and `physical.ai` topics and normalize equivalent labels.
+
+See [`docs/sources/README.md`](docs/sources/README.md) for source details and attribution.
 
 ## Development
 
