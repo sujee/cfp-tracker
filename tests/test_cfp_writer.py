@@ -1977,6 +1977,15 @@ class TestYamlScalarQuoting(WriterTestCase):
             with self.subTest(value=value):
                 self.assertEqual(cw._yaml_str(value), value)
 
+    def test_control_characters_are_escaped_and_round_trip(self) -> None:
+        row = sample_row(location="\u00c3\u0085rhus")
+        cw.upsert(self.data, row)
+        path = cw.note_path(self.data, row)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn('location: "\\u00c3\\u0085rhus"', text)
+        fm, _ = cw._read_frontmatter(path)
+        self.assertEqual(fm["location"], "\u00c3\u0085rhus")
+
     def test_iso_dates_stay_unquoted(self) -> None:
         # Obsidian maps the unquoted form to a date property; quoting it would
         # turn event_date/cfp_close/created/updated into text.

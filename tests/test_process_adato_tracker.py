@@ -209,6 +209,20 @@ class TestCollectRows(unittest.TestCase):
         self.assertIn("Global AI Sarasota \u2013 Kickoff", names)
         self.assertIn("SOAHR 2027 \u2013 SHRM-Atlanta's Annual Conference", names)
 
+    def test_mojibake_location_is_repaired_before_writing(self) -> None:
+        html = (
+            '<table class="tablesorter"><tbody><tr>'
+            '<td>Data Platform Next Step</td><td>\u00c3\u0085rhus</td><td></td>'
+            '<td>2027-05-03</td><td>2027-05-04</td><td>2027-01-13</td>'
+            '<td><a href="https://dataplatformnextstep.com">Link</a></td>'
+            '<td><a href="https://sessionize.com/data-platform-next-step">Link</a></td>'
+            '</tr></tbody></table>'
+        )
+        pat._fetch_page = lambda cache_path=None, offline=False: html
+        rows = pat.collect_rows(CUTOFF, TODAY, None)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["location"], "Århus")
+
     def test_same_name_and_deadline_is_deduped(self) -> None:
         row = (
             "<tr><td>Repeat Conf 2027</td><td>VIRTUAL</td><td></td>"

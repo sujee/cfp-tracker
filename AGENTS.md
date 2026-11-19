@@ -242,7 +242,9 @@ are double-quoted and stay valid YAML. A value YAML would otherwise retype is qu
 deliberate exception: `event_date` and `cfp_close` stay unquoted so PyYAML types them as dates,
 and `created`/`updated` stay unquoted so PyYAML types them as datetimes. Obsidian maps them to
 its date property, and `_as_str` turns them back into their ISO form. `shortlist` and
-`dismissed` are written as bare `true`/`false` booleans.
+`dismissed` are written as bare `true`/`false` booleans. C0/C1 controls use escaped Unicode in
+JSON-quoted values, so an input field cannot split the YAML structure. The adato tracker also
+repairs common Latin-1/UTF-8 double encoding before rendering fields such as `Århus`.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 
