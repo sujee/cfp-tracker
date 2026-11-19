@@ -25,6 +25,7 @@ Enjoying CFP Tracker? Your ⭐️ will help the project reach more speakers.
 - [CFP Markdown format](#cfp-markdown-format)
 - [Browse in Obsidian](#browse-in-obsidian)
 - [Typical workflow](#typical-workflow)
+- [Synchronize submissions](#synchronize-submissions)
 - [Using Agents](#using-agents)
 - [Conference prestige](#conference-prestige)
 - [Sources](#sources)
@@ -201,9 +202,36 @@ Personalize the location views in the `formulas` section of `cfps.base`:
 2. Open **Upcoming** view in Obsidian base (`cfps.base`) to find open CFPs.
 3. Set `shortlist: true` for interesting events.
 4. Set `dismissed: true` to hide an event from live views.
-5. Add wiki links to `submissions` after you submit a talk.
+5. Add wiki links to `submissions` after you submit a talk. Run
+   [submission synchronization](#synchronize-submissions) to add them from your submission notes.
 
 Most views let you include or exclude dismissed notes.
+
+## Synchronize submissions
+
+Set `type` to `submission` or `talk-submission` in each submission note. Set `cfp` to a wiki link for its CFP:
+
+```yaml
+type: talk-submission
+cfp: "[[2026-11-10_pytorch-day-2026]]"
+status: submitted
+```
+
+Preview the additions:
+
+```bash
+uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+```
+
+Apply the additions:
+
+```bash
+uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+```
+
+The command keeps existing entries and appends missing submission links. It never removes links. It leaves submission notes and CFP timestamps unchanged. Run it before a refresh after submissions change.
+
+The submission's `cfp` link and the CFP's `submissions` links support navigation in both directions and the Obsidian graph.
 
 ## Using Agents
 

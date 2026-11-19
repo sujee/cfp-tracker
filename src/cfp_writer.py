@@ -841,10 +841,11 @@ def _write_if_changed(path: Path, text: str) -> str:
 
 
 def set_property(path: Path, key: str, value) -> str:
-    """Set one top-level scalar frontmatter property in place.
+    """Set one top-level scalar or flow-list frontmatter property in place.
 
-    Used by registry-driven taggers (``apply-prestige.py`` writing ``tier``) so a
-    curated value can land on a note without :func:`upsert` re-rendering it: the
+    Used for curation such as ``apply-prestige.py`` writing ``tier`` and
+    ``sync-submissions.py`` writing ``submissions`` without :func:`upsert`
+    re-rendering the note: the
     body notes, every other property, the key order, and the ``created`` /
     ``updated`` stamps are left byte-for-byte alone. Only the ``---`` block is
     touched, and only the one key line.
@@ -864,8 +865,13 @@ def set_property(path: Path, key: str, value) -> str:
     # Numeric values (``tier``) stay unquoted on purpose: a YAML scalar ``1`` is
     # read back as a number, so an Obsidian Bases filter can compare ``tier == 1``.
     # ``_yaml_str`` would quote it (it "looks like" an int), which is right for the
-    # string fields but wrong here.
-    rendered = str(int(value)) if isinstance(value, int) and not isinstance(value, bool) else _yaml_str(value)
+    # string fields but wrong here. Lists use the same safe renderer as note writes.
+    if isinstance(value, (list, tuple)):
+        rendered = _yaml_list(value)
+    elif isinstance(value, int) and not isinstance(value, bool):
+        rendered = str(int(value))
+    else:
+        rendered = _yaml_str(value)
 
     m = _FM_RE.match(text)
     if not m:
@@ -894,8 +900,7 @@ def set_property(path: Path, key: str, value) -> str:
     updated = text[: m.start("fm")] + new_fm + text[m.end("fm") :]
     if updated == text:
         return "unchanged"
-    path.write_text(updated, encoding="utf-8")
-    return "updated"
+    return _write_if_changed(path, updated)
 
 
 def _event_type_for(fm: dict, row: dict) -> str:

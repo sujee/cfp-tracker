@@ -53,6 +53,27 @@ file under `input/`, except `input/archived/`. Three academic listings are avail
   It canonicalises `country` and back-fills missing stamps. It processes only existing `type: cfp`
   notes and leaves other Markdown files unchanged. The command is idempotent.
 
+## Synchronize submissions (optional)
+
+Use this command only when the user supplies a submissions directory. Run it before the normal refresh after submission notes change.
+
+1. Set each submission note's `cfp` property to its CFP wikilink.
+2. Preview the additions:
+
+   ```
+   uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+   ```
+
+3. Apply the additions:
+
+   ```
+   uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+   ```
+
+The command accepts `submission` and `talk-submission` notes. It preserves existing links and appends only missing links. It does not delete stale links. Submission notes stay unchanged. CFP timestamps stay unchanged.
+
+The command reports unresolved, ambiguous, missing, and malformed references. It returns 1 when a reference needs attention. It returns 2 for missing directories or write failures.
+
 ## Checklist
 
 1. Be in this code folder. The scripts (`src/`), docs, and manual input live here; `data/`
@@ -271,6 +292,8 @@ file and the README in the same change.
 - `src/check-links.py` — checks event and CFP URLs under `data/`.
   It accepts a legacy Markdown report too. Only 404 and 410 responses count as dead links.
   Dead links return 1. Unreadable notes return 2 because verification is incomplete.
+- `src/sync-submissions.py` — appends missing submission wikilinks from submission notes' `cfp`
+  references. `--check` previews the additions without writing.
 - `prestige.md` — the curated conference ranking (tier 1/2/3), edited by hand.
 - `src/prestige.py` — loads and matches `prestige.md`; `src/apply-prestige.py` stamps `tier`.
 - `docs/sources/README.md` — source index; `docs/sources/` holds one detail page per source.

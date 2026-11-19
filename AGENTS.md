@@ -136,6 +136,8 @@ Everything an agent needs is here, deliberately:
 - `src/check-links.py` — HTTP checks over CFP and event URLs in a note directory.
   A single legacy Markdown report also works. Only 404/410 responses count as dead links.
   Dead links return 1. Unreadable notes return 2 because verification is incomplete.
+- `src/sync-submissions.py` — appends missing submission wikilinks from submission notes' `cfp`
+  references. `--check` previews the additions without writing.
 - `prestige.md` — the hand-curated conference ranking (`conf name | ranking | keywords`) that
   `src/apply-prestige.py` turns into each note's `tier`. Judgment, not data: no feed carries
   attendance, acceptance rate, or program pedigree.
@@ -264,6 +266,16 @@ External callers must pass both manifest types and protect other paused sources 
   fail loudly rather than reverting silently. Copy `src/config_local.example.py` to create it.
   Adapter imports deliberately do not swallow configuration errors. Duplicate curation merges
   preserve extra-property values semantically and may reformat them with PyYAML.
+- **Submission synchronization is explicit and additive.** `src/sync-submissions.py --data data
+  --submissions DIR` resolves `cfp` wikilinks in `submission` and `talk-submission` notes. It scans
+  only the CFP data directory. Existing `submissions` entries stay in their original order. Missing
+  links append in submission-path order. Aliased or path-equivalent existing links prevent duplicate
+  entries. Unresolved and ambiguous references produce warnings, not guesses. `--check` writes
+  nothing. Warnings return 1 after any valid additions. Missing directories and write failures
+  return 2. Each actual update changes only `submissions`, renders it as a flow list atomically, and
+  leaves submission notes and CFP timestamps unchanged. The command does not remove stale links.
+  Run it before a refresh when archive retention or CFP renames matter. It is not an automatic
+  pipeline stage.
 - **The source-owned fields are regenerated; everything else survives a refresh.**
   `event_name`, `event_date`, `location`, `country`, `cfp_close`, `benefits`, `languages`,
   `event_url`, `cfp_url`, `source` are rebuilt from the row; `shortlist`, `dismissed`,

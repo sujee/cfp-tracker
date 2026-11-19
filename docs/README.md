@@ -216,11 +216,41 @@ allow archiving.
 | `src/check-links.py PATH [--only TEXT] [--workers N] [--timeout S]` | Check CFP and event URLs. Only `404` and `410` count as dead. |
 | `src/normalize-data.py [--data DIR]` | Re-emit existing notes in the current shape. Safe to repeat. |
 | `src/apply-prestige.py [--data DIR] [--list FILE] [--check]` | Stamp `tier` from the ranking table. `--check` writes nothing. |
+| `src/sync-submissions.py [--data DIR] --submissions DIR [--check]` | Add missing submission wikilinks to CFP notes. `--check` writes nothing. |
 | `src/archive-orphans.py [--data DIR] [--archive DIR] [--dry-run] [--json]` | Move notes that no source produces. `--skip-source NAME` protects one source. `--retain-after YYYY-MM-DD` enables rolling-window retention. |
 
 Each source also has a standalone adapter, for example
 `uv run python src/process-confs-tech.py`. An adapter command reconciles on its own and
 treats every other source as paused.
+
+### Submission synchronization
+
+Each submission note must use `type: submission` or `type: talk-submission`. Its `cfp` property must contain a CFP wikilink. A list of CFP wikilinks also works.
+
+Preview additions with:
+
+```bash
+uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+```
+
+Apply additions with:
+
+```bash
+uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+```
+
+The command follows these rules:
+
+- Scan CFP notes below `--data`. The default is `data`.
+- Resolve filename and path wikilinks, including aliases, headings, and optional `.md` extensions.
+- Keep every existing `submissions` entry and append only missing links in deterministic order.
+- Change only `submissions` when a CFP gains links. Do not change submission notes or CFP timestamps.
+- Report unresolved, ambiguous, missing, and malformed references without guessing.
+- Return `1` when any reference needs attention. Return `2` for missing directories or write failures.
+
+The command is additive. Removing or retargeting a submission does not remove its old CFP link. Remove stale links manually. Adding links rewrites `submissions` as a flow list, but preserves unrelated frontmatter and body bytes.
+
+Run synchronization before `process-all.py` after submissions change. A later refresh preserves the links. Synchronizing first also avoids unresolved links when a source revision renames the CFP file.
 
 ## Obsidian views
 
