@@ -1,0 +1,46 @@
+[
+  {
+    "name": "[RSS 2027](https://roboticsconference.org/)",
+    "type": "conference",
+    "status": "upcoming",
+    "where": "Athens, Greece",
+    "when": "July 6-11, 2027",
+    "remarks": "The [official CFP](https://roboticsconference.org/information/cfp/) introduces a two-stage process.",
+    "deadline": "2026-12-04",
+    "deadline_precision": "day",
+    "category": "Robotics & Learning"
+  },
+  {
+    "name": "[IROS 2027](https://2027.ieee-iros.org/)",
+    "type": "conference",
+    "status": "upcoming",
+    "where": "Florence, Italy",
+    "when": "Sep 26 - Oct 1, 2027",
+    "remarks": "Dates, venue and submission deadline confirmed by [IEEE RAS](https://www.ieee-ras.org/event/example/). - Paper submission: March 1, 2027",
+    "deadline": "2027-03-01",
+    "deadline_precision": "day",
+    "category": "Robotics & Learning"
+  },
+  {
+    "name": "[TAROS 2027](https://taros-conference.org/)",
+    "type": "conference",
+    "status": "upcoming",
+    "where": "(TBD)",
+    "when": "(TBD)",
+    "remarks": "Deadline predicted from the previous edition.",
+    "deadline": "2027-04-10",
+    "deadline_precision": "month",
+    "category": "Robotics & Learning"
+  },
+  {
+    "name": "[ICRA 2026](https://2026.ieee-icra.org/)",
+    "type": "conference",
+    "status": "archived",
+    "where": "Vienna, Austria",
+    "when": "June 1-5, 2026",
+    "remarks": "",
+    "deadline": "2025-09-15",
+    "deadline_precision": "day",
+    "category": "Robotics & Learning"
+  }
+]

@@ -330,18 +330,43 @@ class TestArchiveOrphans(ArchiveTestCase):
         self.assertTrue((self.data / "2026/drop.md").is_file())
         self.assertFalse(self.archive.exists())
 
-    def test_existing_destination_aborts_without_overwriting_or_moving(self) -> None:
+    def test_conflicting_copies_get_collision_names_without_overwriting(self) -> None:
         self.note("2026/drop.md")
         self.note("2027/other.md")
         destination = self.archive / "2026/drop.md"
         destination.parent.mkdir(parents=True)
         destination.write_text("older curated archive", encoding="utf-8")
 
-        with self.assertRaises(arch.ArchiveCollisionError):
-            arch.archive_orphans(self.data, self.archive, set())
+        moved = arch.archive_orphans(self.data, self.archive, set())
+
+        self.assertEqual(moved, ["2026/drop-collision-1.md", "2027/other.md"])
         self.assertEqual(destination.read_text(encoding="utf-8"), "older curated archive")
+        self.assertFalse((self.data / "2026/drop.md").exists())
+        self.assertFalse((self.data / "2027/other.md").exists())
+        self.assertTrue((self.archive / "2026/drop-collision-1.md").is_file())
+
+    def test_identical_archive_copy_collapses_without_a_write(self) -> None:
+        text = "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n"
+        self.note("2026/drop.md", text)
+        destination = self.archive / "2026/drop.md"
+        destination.parent.mkdir(parents=True)
+        destination.write_text(text, encoding="utf-8")
+
+        self.assertEqual(arch.archive_orphans(self.data, self.archive, set()), [])
+        self.assertEqual(destination.read_text(encoding="utf-8"), text)
+        self.assertFalse((self.data / "2026/drop.md").exists())
+        self.assertEqual(arch.archive_orphans(self.data, self.archive, set()), [])
+
+    def test_identical_dry_run_keeps_duplicate_in_place(self) -> None:
+        text = "---\ntype: cfp\nname: Drop\n---\n\n## Notes\n"
+        self.note("2026/drop.md", text)
+        destination = self.archive / "2026/drop.md"
+        destination.parent.mkdir(parents=True)
+        destination.write_text(text, encoding="utf-8")
+
+        self.assertEqual(arch.archive_orphans(self.data, self.archive, set(), dry_run=True), [])
         self.assertTrue((self.data / "2026/drop.md").is_file())
-        self.assertTrue((self.data / "2027/other.md").is_file())
+        self.assertEqual(destination.read_text(encoding="utf-8"), text)
 
     def test_superseded_curated_note_moves_after_reconciliation(self) -> None:
         text = "---\ntype: cfp\nshortlist: true\n---\n\n## Notes\n\nSubmitted already.\n"

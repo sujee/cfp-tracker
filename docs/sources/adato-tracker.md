@@ -3,7 +3,9 @@
 - Status: Implemented
 - Official/source URL(s): [Adato Systems CFP Tracker](https://adatosystems.com/cfp-tracker/)
 - Interface: the HTML `<table class="tablesorter">` on `/cfp-tracker/`; adapter [`src/process-adato-tracker.py`](../../src/process-adato-tracker.py)
-- Verification: 2026-11-11
+- Verification: 2026-11-11. Encoding regression added 2026-11-18.
+
+The adapter repairs common Latin-1/UTF-8 double encoding in text cells before normalizing fields. Valid Unicode remains unchanged. The shared writer also escapes control characters that would otherwise invalidate YAML. `tests/test_process_adato_tracker.py` covers the live Århus corruption shape.
 
 ## Data and access
 

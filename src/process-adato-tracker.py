@@ -116,6 +116,20 @@ class _TrackerTableParser(HTMLParser):
             self._cells = None
 
 
+def _repair_mojibake(value: str) -> str:
+    """Undo defer/re-encode corruption while leaving valid Unicode unchanged."""
+    text = value
+    for _ in range(2):
+        try:
+            repaired = text.encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            break
+        if repaired == text:
+            break
+        text = repaired
+    return text
+
+
 def _parse_rows(html: str) -> list[list[tuple[str, str | None]]]:
     parser = _TrackerTableParser()
     parser.feed(html)
@@ -154,7 +168,7 @@ def collect_rows(
     table_rows = _parse_rows(_fetch_page(cache_path, offline=offline))
     _validate_rows(table_rows)
     for cells in table_rows:
-        name, city, state = (cells[i][0] for i in (0, 1, 2))
+        name, city, state = (_repair_mojibake(cells[i][0]) for i in (0, 1, 2))
         start = _parse_date(cells[3][0])
         close = _parse_date(cells[5][0])
         event_url = cells[6][1] or ""

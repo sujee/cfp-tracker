@@ -123,6 +123,11 @@ Everything an agent needs is here, deliberately:
   `adatosystems.com/cfp-tracker/`).
 - `src/process-open-tech-cfps.py` — Open Tech CFPs fetcher (open + closed static JSON).
 - `src/process-manual-input.py` — merges every hand-curated file below `input/`, except `input/archived/`.
+- `src/process-agentconfs.py` — AgentConfs listing, filtered to current robotics speaking calls.
+- `src/process-realtime-embedded-conferences.py` — automaticDai robotics listing, optional academic source.
+- `src/process-ieee-ras.py` — official IEEE RAS deadline iCalendar, optional academic source.
+- `src/process-ccf-deadlines.py` — CCFDDL robotics deadline rounds, optional academic source.
+- `src/listing_source.py` — shared standalone CLI and date helpers for independent listing adapters, including normalized `robotics` and `physical.ai` topic assignment.
 - `src/watchlist.py` — resolves `- [Conference](url)` checklists to CFP pages and event metadata.
 - `src/cfp_writer.py` — writes/refreshes one note per CFP (safe YAML, preserved fields).
 - `src/country.py` — canonicalises the `country` value (`United Kingdom` → `UK`, …).
@@ -136,7 +141,7 @@ Everything an agent needs is here, deliberately:
   attendance, acceptance rate, or program pedigree.
 - `src/prestige.py` — parses `prestige.md` and matches a note name to a tier.
 - `src/apply-prestige.py` — stamps `tier`; `--check` reports per-row match counts and writes nothing.
-- `docs/cfp-sources.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
+- `docs/sources/README.md` — source index with HTTP-verified status; detailed notes in `docs/sources/`.
 - `pyproject.toml` / `uv.lock` / `requirements.txt` — the uv project (PyYAML + pycountry); `uv sync` creates
   the `.venv`, then `uv run python src/…` uses it.
 - `obsidian/dashboard/` — CFP, talk, and submission bases plus the CFP Dataview dashboard.
@@ -237,7 +242,9 @@ are double-quoted and stay valid YAML. A value YAML would otherwise retype is qu
 deliberate exception: `event_date` and `cfp_close` stay unquoted so PyYAML types them as dates,
 and `created`/`updated` stay unquoted so PyYAML types them as datetimes. Obsidian maps them to
 its date property, and `_as_str` turns them back into their ISO form. `shortlist` and
-`dismissed` are written as bare `true`/`false` booleans.
+`dismissed` are written as bare `true`/`false` booleans. C0/C1 controls use escaped Unicode in
+JSON-quoted values, so an input field cannot split the YAML structure. The adato tracker also
+repairs common Latin-1/UTF-8 double encoding before rendering fields such as `Århus`.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 
@@ -351,7 +358,9 @@ External callers must pass both manifest types and protect other paused sources 
   identity match prevents retention for an uncurated note. A free-text close receives no window
   protection. A merged duplicate moves only after the reconciler migrates its curated state to the
   surviving note. Every archive move preserves the file byte-for-byte.
-  The archiver checks all destinations before the first move and never overwrites an existing file.
+  The archiver never overwrites an existing file. An identical live-and-archived duplicate
+  collapses by deleting only the live duplicate. Conflicting copies receive a numbered
+  `-collision-N.md` filename, so different versions remain available without aborting the run.
   Each paired `(-dismissed)` data view uses `formula.is_live` to exclude dismissed
   notes. Its `(+dismissed)` variant uses `formula.is_in_data` instead. **Short listed** and
   **Submitted** are single views without dismissal filtering or a Dismissed column; Submitted also
@@ -402,9 +411,14 @@ External callers must pass both manifest types and protect other paused sources 
   (unwrapping Google `.../url?...&q=<real>` redirects), and strips emphasis. Without this the
   markdown — including a Google redirect URL — leaks into the name and slug. The CFP-Close
   cell keeps free text but drops a trailing `"/ Unstated"` (`Dec 2026 / Unstated` → `Dec 2026`).
+
 - **Current rows decide source ownership.** `sources.SOURCE_PRIORITY` ranks `manual` first.
-  The remaining order is developers.events, cfp.ninja, PythonDeadlin.es, confs.tech, adato-tracker,
-  and Open Tech CFPs. The reconciler compares these priorities only among rows collected for the
+  The remaining order is developers.events, cfp.ninja, PythonDeadlin.es, AgentConfs, confs.tech,
+  adato-tracker, Open Tech CFPs, automaticDai, IEEE RAS, and CCF Deadlines. AgentConfs filters its
+  listing to robotics speaking calls and rejects academic records. The three academic listing
+  adapters are registered but excluded from the default `INPUT_SOURCES`. CCF deadline rows retain
+  abstract, submission, rebuttal, and decision stages in their names. The reconciler compares these
+  priorities only among rows collected for the
   current run. A stale higher-priority
   note cannot suppress an active lower-priority source forever. A deliberately skipped richer source
   still protects its existing notes. Standalone adapters treat every other source as paused.

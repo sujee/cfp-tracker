@@ -35,7 +35,7 @@ cached response. `--offline` reads only the cache and stops at the first miss.
 CFP Tracker reads several public CFP feeds and datasets, plus every manual file under `input/`.
 When two sources describe the same CFP, the pipeline keeps one note.
 
-See [`cfp-sources.md`](cfp-sources.md) for the source list, priorities, field mappings, and
+See [`docs/sources/README.md`](sources/README.md) for the source list, priorities, field mappings, and
 attribution.
 
 ### Note paths
@@ -314,8 +314,8 @@ Rolling-window retention also keeps an eligible source-missing note in `data/`. 
 topic filters. A current note with the same CFP identity prevents retention. Merged duplicates
 still archive. A free-text close receives no rolling-window protection.
 
-A `tier` alone does not keep a note in `data/`. A moved file keeps its bytes. A move never
-overwrites an existing file, and `--no-archive` disables the stage.
+A `tier` alone does not keep a note in `data/`. A moved file keeps its bytes. Identical live-and-archived
+duplicates collapse by deleting only the live duplicate. Conflicting copies receive numbered `-collision-N.md` filenames. `--no-archive` disables the stage. Dry runs never delete duplicates.
 
 ## Troubleshooting
 
@@ -365,14 +365,14 @@ of the downloaded data. Any change under `src/` must keep the suite passing.
 2. Register it in `SOURCE_SPECS` in `src/sources.py` with a name, a script, and a priority.
 3. Add the name to `INPUT_SOURCES` in `src/config.py`.
 4. Add a parser test with a real fixture slice.
-5. Add a page under `docs/sources/` and a row in `docs/cfp-sources.md`.
+5. Add a page under `docs/sources/` and a row in `docs/sources/README.md`.
 
 ## Other documents
 
 | Document | Contents |
 |---|---|
 | [`../README.md`](../README.md) | Setup and first refresh. |
-| [`cfp-sources.md`](cfp-sources.md) | Source index, status, and attribution. |
+| [`docs/sources/README.md`](sources/README.md) | Source index, status, and attribution. |
 | [`sources/`](sources/) | One note per source, with fields and traps. |
 | [`spec.md`](spec.md) | Historical specification from 2026-11-09. Not current behavior. |
 | [`../INSTRUCTIONS.md`](../INSTRUCTIONS.md) | The refresh procedure for an agent. |

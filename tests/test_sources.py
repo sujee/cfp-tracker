@@ -68,6 +68,27 @@ class SourceRegistryTest(unittest.TestCase):
         )
         self.assertEqual(rows[0]["source"], "developers.events")
 
+    def test_independent_adapters_receive_common_context(self) -> None:
+        for name in sources.LISTING_SOURCES:
+            with self.subTest(source=name):
+                module = mock.Mock()
+                module.collect_rows.return_value = [{"name": name}]
+                with mock.patch.object(sources, "load_source", return_value=module):
+                    rows = sources.collect_source(name, self.context)
+                module.collect_rows.assert_called_once_with(
+                    self.context.cutoff,
+                    self.context.today,
+                    self.context.cache,
+                    offline=True,
+                )
+                self.assertEqual(rows, [{"name": name, "source": name}])
+
+    def test_agentconfs_ranks_above_confs_tech(self) -> None:
+        self.assertLess(
+            sources.SOURCE_PRIORITY["agentconfs"],
+            sources.SOURCE_PRIORITY["confs.tech"],
+        )
+
     def test_manual_adapter_receives_input_cache_today_and_offline(self) -> None:
         module = mock.Mock()
         module.collect_rows.return_value = [{"name": "Example", "source": "manual"}]

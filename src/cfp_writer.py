@@ -393,13 +393,18 @@ _MONTHS = {
 }
 
 
+def _has_unsafe_controls(s: str) -> bool:
+    """Return true for C0/C1 controls that can corrupt YAML structure."""
+    return any(ord(char) < 0x20 or 0x7F <= ord(char) <= 0x9F for char in s)
+
+
 def _is_plain_safe(s: str, flow: bool = False) -> bool:
     """True when *s* can be written as an unquoted YAML scalar.
 
     ``flow=True`` for values inside a flow collection (``[a, b]``), where commas
     and brackets are indicators and must be quoted.
     """
-    if s == "" or s != s.strip():
+    if s == "" or s != s.strip() or _has_unsafe_controls(s):
         return False
     if "\n" in s or "\t" in s:
         return False
@@ -443,7 +448,9 @@ def _yaml_str(value, flow: bool = False, allow_date: bool = False) -> str:
     if _is_plain_safe(s, flow=flow) and not _yaml_reads_as_non_string(s, allow_date):
         return s
     # JSON double-quoted strings are valid YAML and escape newlines/quotes.
-    return json.dumps(s, ensure_ascii=False)
+    # C0/C1 characters also render as escapes, preserving their exact code
+    # points instead of letting a control such as NEL split the YAML line.
+    return json.dumps(s, ensure_ascii=_has_unsafe_controls(s))
 
 
 def _yaml_date(value) -> str:

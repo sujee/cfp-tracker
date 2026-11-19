@@ -187,6 +187,30 @@ def find_orphans(
     return orphans
 
 
+def _collision_destination(src: Path, dst: Path, dry_run: bool) -> Path | None:
+    """Resolve one destination without overwriting any existing note.
+
+    Identical copies collapse by removing only the duplicate source. Conflicts
+    receive a numbered ``-collision-N`` filename instead of aborting the run.
+    """
+    if not dst.exists():
+        return dst
+    if src == dst or src.read_bytes() == dst.read_bytes():
+        if src != dst and not dry_run:
+            src.unlink()
+        return None
+    number = 1
+    while True:
+        candidate = dst.with_name(f"{dst.stem}-collision-{number}{dst.suffix}")
+        if not candidate.exists():
+            return candidate
+        if src.read_bytes() == candidate.read_bytes():
+            if not dry_run:
+                src.unlink()
+            return None
+        number += 1
+
+
 def archive_orphans(
     data_dir: Path,
     archive_dir: Path,
@@ -198,26 +222,23 @@ def archive_orphans(
 ) -> list[str]:
     """Move orphan notes byte-for-byte, or return planned moves for a dry run.
 
-    Validate every destination before the first move. A collision aborts the
-    operation instead of overwriting an existing archived note or leaving a
-    partially executed move plan.
+    Identical archived copies collapse without losing content. Conflicting
+    versions receive collision suffixes instead of overwriting archived notes.
     """
     moved = find_orphans(
         data_dir, produced, skip_sources, superseded, retain_after=retain_after
     )
-    moves = [(data_dir / rel, archive_dir / rel, rel) for rel in moved]
+    moves = []
+    for src in [data_dir / rel for rel in moved]:
+        dst = _collision_destination(src, archive_dir / src.relative_to(data_dir), dry_run)
+        if dst is not None:
+            moves.append((src, dst, dst.relative_to(archive_dir).as_posix()))
     if dry_run:
-        return moved
-
-    collisions = [dst for _src, dst, _rel in moves if dst.exists()]
-    if collisions:
-        names = ", ".join(str(path) for path in collisions)
-        raise ArchiveCollisionError(f"archive destination(s) already exist: {names}")
-
+        return [rel for _src, _dst, rel in moves]
     for src, dst, _rel in moves:
         dst.parent.mkdir(parents=True, exist_ok=True)
         src.rename(dst)
-    return moved
+    return [rel for _src, _dst, rel in moves]
 
 
 def main() -> int:

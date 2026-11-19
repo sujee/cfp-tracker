@@ -1,0 +1,29 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//IEEE Robotics and Automation Society Website//EN
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261201
+DTEND;VALUE=DATE:20261202
+UID:arso-2027@www.ieee-ras.org
+SUMMARY:Deadlines - Paper submission deadline: ARSO: 2027 IEEE International Conference on Advanced Robotics and its Social Impacts (ARSO)
+DESCRIPTION:Submit your research papers and proposals for 2027 IEEE International Conference on Advanced Robotics and its Social Impacts (ARSO).
+URL:https://www.ieee-ras.org/event/deadlines-arso-2027/
+CATEGORIES:Deadlines,Important Dates
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20270205
+DTEND;VALUE=DATE:20270206
+UID:icuas-2027@www.ieee-ras.org
+SUMMARY:Deadlines - Paper submission deadline: ICUAS: 2027 International Conference on Unmanned Aircraft Systems (ICUAS)
+DESCRIPTION:Submit your research papers and proposals for 2027 IEEE International Conference on Unmanned Aircraft Systems (ICUAS).
+URL:https://www.ieee-ras.org/event/deadlines-icuas-2027/
+CATEGORIES:Deadlines,Important Dates
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261101
+UID:old-robotics@www.ieee-ras.org
+SUMMARY:Call for Papers - Paper submission deadline: Old Robotics: 2026 International Conference on Computational Robotics\, Testing and Engineering Evaluation
+URL:https://www.ieee-ras.org/event/old-robotics-2026/
+CATEGORIES:Deadlines
+END:VEVENT
+END:VCALENDAR

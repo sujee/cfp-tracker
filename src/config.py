@@ -32,6 +32,7 @@ INPUT_SOURCES = [
     "developers.events",
     "cfp.ninja",
     "python-deadlines",
+    "agentconfs",
     "confs.tech",
     "adato-tracker",
     "open-tech-cfps",
