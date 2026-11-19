@@ -10,6 +10,7 @@ __pycache__/
 # Root symlinks to the Obsidian vault. Example notes under obsidian/ remain trackable.
 /data
 /archived
+/submissions
 
 # Obsidian application state
 /obsidian/.obsidian/

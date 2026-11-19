@@ -216,7 +216,7 @@ allow archiving.
 | `src/check-links.py PATH [--only TEXT] [--workers N] [--timeout S]` | Check CFP and event URLs. Only `404` and `410` count as dead. |
 | `src/normalize-data.py [--data DIR]` | Re-emit existing notes in the current shape. Safe to repeat. |
 | `src/apply-prestige.py [--data DIR] [--list FILE] [--check]` | Stamp `tier` from the ranking table. `--check` writes nothing. |
-| `src/sync-submissions.py [--data DIR] --submissions DIR [--check]` | Add missing submission wikilinks to CFP notes. `--check` writes nothing. |
+| `src/sync-submission-links.py [--data DIR] --submissions DIR [--check]` | Add missing submission wikilinks to CFP notes. `--check` writes nothing. |
 | `src/archive-orphans.py [--data DIR] [--archive DIR] [--dry-run] [--json]` | Move notes that no source produces. `--skip-source NAME` protects one source. `--retain-after YYYY-MM-DD` enables rolling-window retention. |
 
 Each source also has a standalone adapter, for example
@@ -230,13 +230,13 @@ Each submission note must use `type: submission` or `type: talk-submission`. Its
 Preview additions with:
 
 ```bash
-uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions --check
 ```
 
 Apply additions with:
 
 ```bash
-uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions
 ```
 
 The command follows these rules:

@@ -7,8 +7,8 @@ links to each CFP's ``submissions`` list. Existing entries are never removed.
 Submission notes are read-only, and CFP timestamps remain unchanged.
 
 Usage (from the repository root):
-    python3 src/sync-submissions.py --data data --submissions /path/to/submissions --check
-    python3 src/sync-submissions.py --data data --submissions /path/to/submissions
+    python3 src/sync-submission-links.py --data data --submissions /path/to/submissions --check
+    python3 src/sync-submission-links.py --data data --submissions /path/to/submissions
 """
 from __future__ import annotations
 
@@ -238,18 +238,18 @@ def main() -> int:
     data_dir = Path(args.data).resolve()
     submissions_dir = Path(args.submissions).resolve()
     if not data_dir.is_dir():
-        print(f"sync-submissions: CFP directory not found: {data_dir}", file=sys.stderr)
+        print(f"sync-submission-links: CFP directory not found: {data_dir}", file=sys.stderr)
         return 2
     if not submissions_dir.is_dir():
         print(
-            f"sync-submissions: submissions directory not found: {submissions_dir}",
+            f"sync-submission-links: submissions directory not found: {submissions_dir}",
             file=sys.stderr,
         )
         return 2
 
     plan = build_plan(data_dir, submissions_dir)
     for warning in plan.warnings:
-        print(f"sync-submissions: warning: {warning}", file=sys.stderr)
+        print(f"sync-submission-links: warning: {warning}", file=sys.stderr)
 
     for change in plan.changes:
         action = "would update" if args.check else "update"
@@ -260,14 +260,14 @@ def main() -> int:
     try:
         updated = len(plan.changes) if args.check else apply_plan(plan)
     except (OSError, FrontmatterError) as exc:
-        print(f"sync-submissions: write failed: {exc}", file=sys.stderr)
+        print(f"sync-submission-links: write failed: {exc}", file=sys.stderr)
         return 2
 
     action = "would add" if args.check else "added"
     link_noun = "link" if plan.addition_count == 1 else "links"
     note_noun = "note" if updated == 1 else "notes"
     print(
-        f"sync-submissions: {plan.submission_count} submission notes, "
+        f"sync-submission-links: {plan.submission_count} submission notes, "
         f"{plan.resolved_references} resolved references. {action} "
         f"{plan.addition_count} {link_noun} across {updated} CFP {note_noun}. "
         f"{plan.unchanged_count} targeted CFP notes already current."

@@ -61,13 +61,13 @@ Use this command only when the user supplies a submissions directory. Run it bef
 2. Preview the additions:
 
    ```
-   uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+   uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions --check
    ```
 
 3. Apply the additions:
 
    ```
-   uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+   uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions
    ```
 
 The command accepts `submission` and `talk-submission` notes. It preserves existing links and appends only missing links. It does not delete stale links. Submission notes stay unchanged. CFP timestamps stay unchanged.
@@ -292,7 +292,7 @@ file and the README in the same change.
 - `src/check-links.py` — checks event and CFP URLs under `data/`.
   It accepts a legacy Markdown report too. Only 404 and 410 responses count as dead links.
   Dead links return 1. Unreadable notes return 2 because verification is incomplete.
-- `src/sync-submissions.py` — appends missing submission wikilinks from submission notes' `cfp`
+- `src/sync-submission-links.py` — appends missing submission wikilinks from submission notes' `cfp`
   references. `--check` previews the additions without writing.
 - `prestige.md` — the curated conference ranking (tier 1/2/3), edited by hand.
 - `src/prestige.py` — loads and matches `prestige.md`; `src/apply-prestige.py` stamps `tier`.

@@ -23,7 +23,7 @@ def load_module(path: Path, name: str):
     return module
 
 
-sync = load_module(ROOT / "src" / "sync-submissions.py", "sync_submissions")
+sync = load_module(ROOT / "src" / "sync-submission-links.py", "sync_submission_links")
 
 
 class SyncSubmissionsTestCase(unittest.TestCase):
@@ -87,7 +87,7 @@ class SyncSubmissionsTestCase(unittest.TestCase):
     def run_cli(self, *extra: str) -> tuple[int, str, str]:
         command = [
             sys.executable,
-            str(ROOT / "src" / "sync-submissions.py"),
+            str(ROOT / "src" / "sync-submission-links.py"),
             "--data",
             str(self.data),
             "--submissions",
@@ -304,7 +304,7 @@ class SyncSubmissionsTestCase(unittest.TestCase):
         process = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "src" / "sync-submissions.py"),
+                str(ROOT / "src" / "sync-submission-links.py"),
                 "--data",
                 str(missing),
                 "--submissions",

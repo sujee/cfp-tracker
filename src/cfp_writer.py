@@ -844,7 +844,7 @@ def set_property(path: Path, key: str, value) -> str:
     """Set one top-level scalar or flow-list frontmatter property in place.
 
     Used for curation such as ``apply-prestige.py`` writing ``tier`` and
-    ``sync-submissions.py`` writing ``submissions`` without :func:`upsert`
+    ``sync-submission-links.py`` writing ``submissions`` without :func:`upsert`
     re-rendering the note: the
     body notes, every other property, the key order, and the ``created`` /
     ``updated`` stamps are left byte-for-byte alone. Only the ``---`` block is

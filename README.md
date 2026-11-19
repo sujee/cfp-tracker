@@ -220,13 +220,13 @@ status: submitted
 Preview the additions:
 
 ```bash
-uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions --check
+uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions --check
 ```
 
 Apply the additions:
 
 ```bash
-uv run python src/sync-submissions.py --data data --submissions /path/to/vault/submissions
+uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions
 ```
 
 The command keeps existing entries and appends missing submission links. It never removes links. It leaves submission notes and CFP timestamps unchanged. Run it before a refresh after submissions change.

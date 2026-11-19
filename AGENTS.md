@@ -136,7 +136,7 @@ Everything an agent needs is here, deliberately:
 - `src/check-links.py` — HTTP checks over CFP and event URLs in a note directory.
   A single legacy Markdown report also works. Only 404/410 responses count as dead links.
   Dead links return 1. Unreadable notes return 2 because verification is incomplete.
-- `src/sync-submissions.py` — appends missing submission wikilinks from submission notes' `cfp`
+- `src/sync-submission-links.py` — appends missing submission wikilinks from submission notes' `cfp`
   references. `--check` previews the additions without writing.
 - `prestige.md` — the hand-curated conference ranking (`conf name | ranking | keywords`) that
   `src/apply-prestige.py` turns into each note's `tier`. Judgment, not data: no feed carries
@@ -266,7 +266,7 @@ External callers must pass both manifest types and protect other paused sources 
   fail loudly rather than reverting silently. Copy `src/config_local.example.py` to create it.
   Adapter imports deliberately do not swallow configuration errors. Duplicate curation merges
   preserve extra-property values semantically and may reformat them with PyYAML.
-- **Submission synchronization is explicit and additive.** `src/sync-submissions.py --data data
+- **Submission synchronization is explicit and additive.** `src/sync-submission-links.py --data data
   --submissions DIR` resolves `cfp` wikilinks in `submission` and `talk-submission` notes. It scans
   only the CFP data directory. Existing `submissions` entries stay in their original order. Missing
   links append in submission-path order. Aliased or path-equivalent existing links prevent duplicate
