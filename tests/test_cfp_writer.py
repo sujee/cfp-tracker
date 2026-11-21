@@ -314,6 +314,74 @@ class TestCuratedConflicts(WriterTestCase):
         self.assertIn("type: cfp", text)
 
 
+class TestCuratedClose(WriterTestCase):
+    """``curated_fields: [cfp_close]`` keeps a corrected deadline.
+
+    The feed is often wrong about a deadline, so the note's value wins and the
+    conflict is visible. The note *path* stays source-driven, so a curated close
+    never renames the file.
+    """
+
+    def curate_close(self, value: str) -> None:
+        self.edit(
+            "cfp_close: 2026-11-30",
+            f"curated_fields: [cfp_close]\ncfp_close: {value}",
+        )
+
+    def test_curated_close_keeps_note_value_and_flags_conflict(self) -> None:
+        self.write_initial()
+        self.curate_close("2026-12-15")
+
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-21"), "updated")
+
+        fm = self.frontmatter()
+        self.assertEqual(cw._as_str(fm["cfp_close"]), "2026-12-15")
+        self.assertEqual(fm["curated_fields"], ["cfp_close"])
+        self.assertIs(fm["conflict"], True)
+        self.assertIn(
+            "cfp_close: kept `2026-12-15`, source says `2026-11-30`",
+            self.path.read_text(encoding="utf-8"),
+        )
+        self.assertTrue(self.path.is_file())  # path still follows the source row
+
+        # The curated value settles: the next identical refresh writes nothing.
+        before = self.path.read_bytes()
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-22"), "unchanged")
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_removing_curated_close_lets_the_source_take_over(self) -> None:
+        self.write_initial()
+        self.curate_close("2026-12-15")
+        cw.upsert(self.data, self.row, today="2026-11-21")
+        self.assertIs(self.frontmatter()["conflict"], True)
+
+        self.edit("curated_fields: [cfp_close]\n", "")
+        self.assertEqual(cw.upsert(self.data, self.row, today="2026-11-22"), "updated")
+
+        fm = self.frontmatter()
+        self.assertEqual(cw._as_str(fm["cfp_close"]), "2026-11-30")
+        self.assertNotIn("conflict", fm)
+        self.assertNotIn("## Conflict", self.path.read_text(encoding="utf-8"))
+
+    def test_unsupported_curated_entry_warns_without_owning_the_field(self) -> None:
+        # ``event_date`` drives identity, so it stays source-owned. The entry is
+        # still read, so it must be reported instead of silently ignored.
+        self.write_initial()
+        self.edit(
+            "cfp_close: 2026-11-30",
+            "curated_fields: [event_date]\ncfp_close: 2026-11-30",
+        )
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            status = cw.upsert(self.data, self.row, today="2026-11-21")
+
+        self.assertEqual(status, "unchanged")
+        message = stderr.getvalue()
+        self.assertIn("cannot curate event_date", message)
+        self.assertIn("supported: location, country, cfp_close", message)
+
+
 class TestMergeCuration(WriterTestCase):
     """A curated value on a superseded note survives the merge into the target."""
 

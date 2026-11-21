@@ -158,8 +158,11 @@ operation without overwriting the archived note.
   `location`, `country`, `cfp_close`, `benefits`, `languages`, `event_url`, `cfp_url`,
   `source`) — they are regenerated. To keep a field you own, list it in `curated_fields`
   (for example `curated_fields: [location]`). The writer checks `location`, `country`,
-  `event_url`, and `cfp_url`. When the source disagrees, it keeps your value, sets
+  `cfp_close`, `event_url`, and `cfp_url`. When the source disagrees, it keeps your value, sets
   `conflict: true`, adds a writer-owned `## Conflict` body section, and prints a warning.
+  A feed is often wrong about a deadline, so `cfp_close` accepts curation. The note path still
+  follows the source row, so a curated close does not rename the note. The writer reports a
+  `curated_fields` entry it cannot honour (`event_name`, `event_date`, or a typo) on stderr.
   A blank location is also a conflict when the note has a real one. The conflict clears when
   the source matches your value or the field leaves `curated_fields`. Everything else survives a
   refresh: `shortlist`, `dismissed`, `submissions`, the `## Notes` body, and any extra

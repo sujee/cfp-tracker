@@ -205,12 +205,16 @@ tier: 1                        # optional; curated from prestige.md (1 flagship,
 whole tree.
 
 `curated_fields` lists the source-owned fields the user owns. The writer checks `location`,
-`country`, `event_url`, and `cfp_url`; `event_name`, `event_date`, and `cfp_close` still define the
-note path and stay source-owned. A source value that differs from a curated field is a conflict.
+`country`, `cfp_close`, `event_url`, and `cfp_url`. `cfp_close` is curatable because a feed is
+often wrong about a deadline, but the note path still follows the source row, so a curated close
+never renames the note. `event_name` and `event_date` still define identity and the year folder,
+so they stay source-owned. A source value that differs from a curated field is a conflict.
 The writer keeps the note's value, sets `conflict: true`, writes a writer-owned `## Conflict` body
 section that names the field and both values, and prints a warning. A blank location is also a
 conflict when the note has a real one, even without `curated_fields`. When the source matches the
 note again, or the field leaves `curated_fields`, the conflict clears and the section is removed.
+A `curated_fields` entry the writer cannot honour prints a stderr warning, so a typo or an
+identity field is never ignored silently.
 
 New `replaces` entries appear only when a note absorbs a separate duplicate note. They record
 data-relative duplicate paths. Existing entries survive later renames. The reconciler uses them to
@@ -340,12 +344,17 @@ External callers must pass both manifest types and protect other paused sources 
   commit in the vault's git history (following renames), so they carry the real first-seen
   date rather than the day the stamps were introduced.
 - **`curated_fields` wins a conflict, and the conflict is visible.** `curated_fields` is a
-  user-owned list of source field names. The writer checks `location`, `country`, `event_url`, and
-  `cfp_url` (the fields that do not drive the note path). When the source value differs, the note
+  user-owned list of source field names. The writer checks `location`, `country`, `cfp_close`,
+  `event_url`, and `cfp_url`. `cfp_close` is included because feeds get deadlines wrong. Its value
+  is user-owned, but the note path stays source-driven: `note_path` builds the filename and year
+  folder from the row, so a curated close never renames the note. `event_name` and `event_date`
+  remain source-owned because they define identity. When the source value differs, the note
   value is kept, `conflict: true` is written, and a writer-owned `## Conflict` body section records
   the field and both values. A blank location is also a conflict when the note has a real one,
   without needing `curated_fields`. The conflict clears when the source matches the note or the
-  field leaves `curated_fields`. `curated_fields` is not in `KNOWN_FM_KEYS`, so the writer
+  field leaves `curated_fields`. An entry the writer cannot honour (an identity field or a typo)
+  prints a stderr warning once per note, so it is never dropped silently.
+  `curated_fields` is not in `KNOWN_FM_KEYS`, so the writer
   preserves it verbatim and the archiver treats it as user curation. `conflict` is in
   `KNOWN_FM_KEYS`, so it is recomputed on each write and does not keep a dropped note alive.
   The generated `## Conflict` body section is not user curation either, so a conflict alone

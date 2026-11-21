@@ -99,6 +99,28 @@ class ReconcileTest(unittest.TestCase):
         self.assertFalse((self.archive_dir / old_path.relative_to(self.data)).exists())
         self.assertTrue(new_path.is_file())
 
+    def test_curated_close_survives_reconciliation(self) -> None:
+        # A feed can be wrong about a deadline. ``curated_fields: [cfp_close]``
+        # keeps the corrected value across a refresh and records the disagreement.
+        original = row()
+        self.assertEqual(writer.upsert(self.data, original, today="2026-11-01T00:00:00"), "new")
+        path = writer.note_path(self.data, original)
+        text = path.read_text(encoding="utf-8").replace(
+            "cfp_close: 2026-12-01",
+            "curated_fields: [cfp_close]\ncfp_close: 2026-12-20",
+        )
+        path.write_text(text, encoding="utf-8")
+
+        result = reconcile_rows(self.data, {"developers.events": [original]}, today="2026-11-21T00:00:00")
+
+        self.assertEqual(result.summaries["developers.events"]["updated"], 1)
+        self.assertEqual(result.produced, {path.relative_to(self.data).as_posix()})
+        fm, body = writer._read_frontmatter(path)
+        self.assertEqual(writer._as_str(fm["cfp_close"]), "2026-12-20")
+        self.assertIs(fm["conflict"], True)
+        self.assertIn("cfp_close: kept `2026-12-20`, source says `2026-12-01`", body)
+        self.assertTrue(path.is_file())
+
     def test_revision_read_failure_preserves_original_and_writes_no_target(self) -> None:
         original = row()
         writer.upsert(self.data, original, today="2026-11-01T00:00:00")

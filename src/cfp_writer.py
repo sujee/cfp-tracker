@@ -167,10 +167,14 @@ SOURCE_SCALAR_FIELDS = (
 LIST_FIELDS = ("topics", "benefits", "languages")
 
 # Fields a note can mark as user-curated with ``curated_fields: [location]``.
-# They do not drive the note path, so keeping the note's value cannot move the
-# note. ``event_name``/``event_date``/``cfp_close`` still define identity and
-# the year folder, so they remain source-owned even when they appear there.
-CONFLICT_FIELDS = ("location", "country", "event_url", "cfp_url")
+# ``cfp_close`` is included because a feed is frequently wrong about a deadline
+# and a corrected value must survive a refresh. Its *value* is user-owned, but
+# the note path stays source-driven: ``note_path`` builds the filename and year
+# folder from the source row, so a curated close never renames the file.
+# ``event_name``/``event_date`` still define identity and the year folder, so
+# they remain source-owned even when they appear in ``curated_fields``.
+CONFLICT_FIELDS = ("location", "country", "cfp_close", "event_url", "cfp_url")
+_CONFLICT_FIELD_SET = frozenset(CONFLICT_FIELDS)
 CONFLICT_HEADING = "## Conflict"
 _PLACEHOLDER_LOCATIONS = {"", "—", "-"}
 
@@ -596,6 +600,27 @@ def _body_and_legacy_notes(fm: dict, body: str) -> str:
 def _curated_fields(fm: dict) -> set[str]:
     """Field names the note marks as user-curated (case-insensitive)."""
     return {name.casefold() for name in _as_list(fm.get("curated_fields")) if name.strip()}
+
+
+def _unsupported_curated(curated: set[str]) -> list[str]:
+    """``curated_fields`` entries the writer cannot honour, sorted for stable output."""
+    return sorted(name for name in curated if name not in _CONFLICT_FIELD_SET)
+
+
+_WARNED_CURATED: set[tuple[str, tuple[str, ...]]] = set()
+
+
+def _warn_unsupported_curated(path: Path, names: list[str]) -> None:
+    """Report ignored ``curated_fields`` entries once per note and process."""
+    key = (str(path), tuple(names))
+    if key in _WARNED_CURATED:
+        return
+    _WARNED_CURATED.add(key)
+    print(
+        f"cfp-writer: {path}: cannot curate {', '.join(names)} "
+        f"(supported: {', '.join(CONFLICT_FIELDS)})",
+        file=sys.stderr,
+    )
 
 
 def _conflict_section(conflicts) -> str:
@@ -1091,6 +1116,11 @@ def upsert(
     # location also counts as a conflict even without ``curated_fields``,
     # because an unknown value must not erase a real venue.
     curated = _curated_fields(fm)
+    unsupported = _unsupported_curated(curated)
+    if unsupported:
+        # A name the writer cannot honour would otherwise be dropped silently,
+        # so the note looks curated while the source keeps overwriting it.
+        _warn_unsupported_curated(path, unsupported)
     conflicts = []
     for field in CONFLICT_FIELDS:
         existing_value = _as_str(fm.get(field)).strip()

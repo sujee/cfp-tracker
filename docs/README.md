@@ -133,6 +133,11 @@ Add a source field to `curated_fields` to keep your own value:
 curated_fields: [location]
 ```
 
+The writer supports `location`, `country`, `cfp_close`, `event_url`, and `cfp_url`. `cfp_close`
+is curatable because feeds are often wrong about a deadline. The note path still follows the
+source, so a curated close does not rename the note. A `curated_fields` entry the writer cannot
+honour prints a warning.
+
 When the source disagrees, the note keeps your value, sets `conflict: true`, and adds a
 `## Conflict` section that names the field and both values. The conflict clears when the
 source matches again or the field leaves `curated_fields`.
