@@ -246,7 +246,10 @@ and `created`/`updated` stay unquoted so PyYAML types them as datetimes. Obsidia
 its date property, and `_as_str` turns them back into their ISO form. `shortlist` and
 `dismissed` are written as bare `true`/`false` booleans. C0/C1 controls use escaped Unicode in
 JSON-quoted values, so an input field cannot split the YAML structure. The adato tracker also
-repairs common Latin-1/UTF-8 double encoding before rendering fields such as `Århus`.
+repairs common Latin-1/UTF-8 double encoding before rendering fields such as `Århus`. A character
+outside Latin-1 is never corruption, so it splits the value: each Latin-1 run around it repairs
+alone. That is how `Global Power Platform Bootcamp 2027 – Castellón` keeps its en dash and its
+accent.
 `benefits` and `languages` are written only when a source states one, so notes from sources that
 don't carry them are rendered exactly as before (no empty line).
 

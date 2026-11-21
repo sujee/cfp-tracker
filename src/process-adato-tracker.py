@@ -116,9 +116,10 @@ class _TrackerTableParser(HTMLParser):
             self._cells = None
 
 
-def _repair_mojibake(value: str) -> str:
-    """Undo defer/re-encode corruption while leaving valid Unicode unchanged."""
-    text = value
+_NON_LATIN1_RUN = re.compile(r"([^\x00-\xff]+)")
+
+
+def _repair_run(text: str) -> str:
     for _ in range(2):
         try:
             repaired = text.encode("latin-1").decode("utf-8")
@@ -128,6 +129,21 @@ def _repair_mojibake(value: str) -> str:
             break
         text = repaired
     return text
+
+
+def _repair_mojibake(value: str) -> str:
+    """Undo double-encode corruption while leaving valid Unicode unchanged.
+
+    Only Latin-1 characters can carry the bytes of a double-encoded run. A
+    character outside Latin-1 (an en dash, an emoji) cannot be re-encoded and
+    is never corruption, so it splits the value: each Latin-1 run around it is
+    repaired on its own and the character itself passes through unchanged.
+    Without the split one such character defeated the whole repair.
+    """
+    return "".join(
+        part if _NON_LATIN1_RUN.fullmatch(part) else _repair_run(part)
+        for part in _NON_LATIN1_RUN.split(value)
+    )
 
 
 def _parse_rows(html: str) -> list[list[tuple[str, str | None]]]:

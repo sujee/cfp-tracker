@@ -160,6 +160,26 @@ class TestTableParser(unittest.TestCase):
             pat._parse_rows('<table class="other"><tbody></tbody></table>')
 
 
+class TestRepairMojibake(unittest.TestCase):
+    def test_repairs_double_encoded_latin1(self) -> None:
+        self.assertEqual(pat._repair_mojibake("Castell\u00c3\u00b3n"), "Castellón")
+        self.assertEqual(pat._repair_mojibake("\u00c3\u0085rhus"), "Århus")
+
+    def test_repairs_a_run_next_to_a_non_latin1_character(self) -> None:
+        value = "Global Power Platform Bootcamp 2027 \u2013 Castell\u00c3\u00b3n"
+        self.assertEqual(
+            pat._repair_mojibake(value),
+            "Global Power Platform Bootcamp 2027 \u2013 Castellón",
+        )
+
+    def test_repairs_double_encoded_chains(self) -> None:
+        self.assertEqual(pat._repair_mojibake("\u00c3\u0083\u00c2\u00a9"), "é")
+
+    def test_valid_unicode_is_unchanged(self) -> None:
+        for value in ("Castellón", "Århus", "Global AI Summit \u2013 Ōsaka", "Café", ""):
+            self.assertEqual(pat._repair_mojibake(value), value)
+
+
 class TestCollectRows(unittest.TestCase):
     def setUp(self) -> None:
         self._orig = pat._fetch_page
@@ -222,6 +242,24 @@ class TestCollectRows(unittest.TestCase):
         rows = pat.collect_rows(CUTOFF, TODAY, None)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["location"], "Århus")
+
+    def test_mojibake_name_beside_an_en_dash_is_repaired(self) -> None:
+        html = (
+            '<table class="tablesorter"><tbody><tr>'
+            '<td>Global Power Platform Bootcamp 2027 &#8211; CastellÃ³n</td>'
+            '<td>CastellÃ³ de la Plana</td><td></td>'
+            '<td>2027-02-20</td><td>2027-02-20</td><td>2027-01-18</td>'
+            '<td><a href="https://www.powerplatformcastellon.es">Link</a></td>'
+            '<td><a href="https://sessionize.com/global-power-platform-bootcamp-castellon-2027">Link</a></td>'
+            '</tr></tbody></table>'
+        )
+        pat._fetch_page = lambda cache_path=None, offline=False: html
+        rows = pat.collect_rows(CUTOFF, TODAY, None)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(
+            rows[0]["name"], "Global Power Platform Bootcamp 2027 \u2013 Castellón"
+        )
+        self.assertEqual(rows[0]["location"], "Castelló de la Plana")
 
     def test_same_name_and_deadline_is_deduped(self) -> None:
         row = (
