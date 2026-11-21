@@ -55,19 +55,19 @@ file under `input/`, except `input/archived/`. Three academic listings are avail
 
 ## Synchronize submissions (optional)
 
-Use this command only when the user supplies a submissions directory. Run it before the normal refresh after submission notes change.
+Run this command before the normal refresh after submission notes change. It reads `data/` and `submissions/` by default. Pass `--data` or `--submissions` to use other directories.
 
 1. Set each submission note's `cfp` property to its CFP wikilink.
 2. Preview the additions:
 
    ```
-   uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions --check
+   uv run python src/sync-submission-links.py --check
    ```
 
 3. Apply the additions:
 
    ```
-   uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions
+   uv run python src/sync-submission-links.py
    ```
 
 The command accepts `submission` and `talk-submission` notes. It preserves existing links and appends only missing links. It does not delete stale links. Submission notes stay unchanged. CFP timestamps stay unchanged.

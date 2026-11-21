@@ -269,8 +269,9 @@ External callers must pass both manifest types and protect other paused sources 
   fail loudly rather than reverting silently. Copy `src/config_local.example.py` to create it.
   Adapter imports deliberately do not swallow configuration errors. Duplicate curation merges
   preserve extra-property values semantically and may reformat them with PyYAML.
-- **Submission synchronization is explicit and additive.** `src/sync-submission-links.py --data data
-  --submissions DIR` resolves `cfp` wikilinks in `submission` and `talk-submission` notes. It scans
+- **Submission synchronization is explicit and additive.** `src/sync-submission-links.py` defaults
+  to `--data data --submissions submissions`. It resolves `cfp` wikilinks in `submission` and
+  `talk-submission` notes. It scans
   only the CFP data directory. Existing `submissions` entries stay in their original order. Missing
   links append in submission-path order. Aliased or path-equivalent existing links prevent duplicate
   entries. Unresolved and ambiguous references produce warnings, not guesses. `--check` writes

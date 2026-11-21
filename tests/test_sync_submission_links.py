@@ -299,6 +299,25 @@ class SyncSubmissionsTestCase(unittest.TestCase):
         self.assertEqual(len(plan.warnings), 1)
         self.assertIn("missing cfp reference", plan.warnings[0])
 
+    def test_default_submissions_directory_is_used(self) -> None:
+        cfp = self.cfp("2026/conf.md")
+        self.submission("talk.md", "[[conf]]")
+
+        process = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "src" / "sync-submission-links.py"),
+                "--data",
+                "data",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=self.root,
+        )
+
+        self.assertEqual(process.returncode, 0, process.stderr)
+        self.assertEqual(self.submissions_of(cfp), ["[[talk]]"])
+
     def test_missing_directory_returns_2(self) -> None:
         missing = self.root / "missing"
         process = subprocess.run(

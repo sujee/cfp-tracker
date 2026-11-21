@@ -7,7 +7,8 @@ links to each CFP's ``submissions`` list. Existing entries are never removed.
 Submission notes are read-only, and CFP timestamps remain unchanged.
 
 Usage (from the repository root):
-    python3 src/sync-submission-links.py --data data --submissions /path/to/submissions --check
+    python3 src/sync-submission-links.py --check
+    python3 src/sync-submission-links.py
     python3 src/sync-submission-links.py --data data --submissions /path/to/submissions
 """
 from __future__ import annotations
@@ -228,7 +229,9 @@ def main() -> int:
     )
     parser.add_argument("--data", default="data", help="CFP notes directory (default: data).")
     parser.add_argument(
-        "--submissions", required=True, help="Directory containing submission Markdown notes."
+        "--submissions",
+        default="submissions",
+        help="Directory containing submission Markdown notes (default: submissions).",
     )
     parser.add_argument(
         "--check", action="store_true", help="Report additions without writing files."

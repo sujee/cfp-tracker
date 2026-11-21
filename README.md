@@ -217,16 +217,18 @@ cfp: "[[2026-11-10_pytorch-day-2026]]"
 status: submitted
 ```
 
+The command reads `data/` and `submissions/` by default. Pass `--data` or `--submissions` to use other directories.
+
 Preview the additions:
 
 ```bash
-uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions --check
+uv run python src/sync-submission-links.py --check
 ```
 
 Apply the additions:
 
 ```bash
-uv run python src/sync-submission-links.py --data data --submissions /path/to/vault/submissions
+uv run python src/sync-submission-links.py
 ```
 
 The command keeps existing entries and appends missing submission links. It never removes links. It leaves submission notes and CFP timestamps unchanged. Run it before a refresh after submissions change.
